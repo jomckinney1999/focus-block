@@ -1,0 +1,11 @@
+{
+  "name": "Focus Block",
+  "short_name": "Focus",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#100d1c",
+  "theme_color": "#15121f",
+  "icons": []
+}
