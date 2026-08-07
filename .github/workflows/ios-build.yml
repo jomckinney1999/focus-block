@@ -1,0 +1,114 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+      APP_PROFILE_NAME: ${{ secrets.APP_PROFILE_NAME }}
+      MONITOR_PROFILE_NAME: ${{ secrets.MONITOR_PROFILE_NAME }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Import signing certificate
+        env:
+          CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -e
+          KEYCHAIN=build.keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$CERT_P12_BASE64" | base64 --decode > cert.p12
+          security import cert.p12 -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          EXISTING=$(security list-keychains -d user | sed 's/"//g')
+          security list-keychains -d user -s "$KEYCHAIN" $EXISTING
+          rm cert.p12
+
+      - name: Install provisioning profiles
+        env:
+          APP_PROVISION_BASE64: ${{ secrets.IOS_APP_PROVISION_BASE64 }}
+          MONITOR_PROVISION_BASE64: ${{ secrets.IOS_MONITOR_PROVISION_BASE64 }}
+        run: |
+          set -e
+          PROFILES_DIR=~/Library/MobileDevice/Provisioning\ Profiles
+          mkdir -p "$PROFILES_DIR"
+
+          echo "$APP_PROVISION_BASE64" | base64 --decode > app.mobileprovision
+          echo "$MONITOR_PROVISION_BASE64" | base64 --decode > monitor.mobileprovision
+
+          security cms -D -i app.mobileprovision > app_profile.plist
+          security cms -D -i monitor.mobileprovision > monitor_profile.plist
+          APP_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" app_profile.plist)
+          MONITOR_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" monitor_profile.plist)
+
+          cp app.mobileprovision "$PROFILES_DIR/$APP_UUID.mobileprovision"
+          cp monitor.mobileprovision "$PROFILES_DIR/$MONITOR_UUID.mobileprovision"
+
+      - name: Archive
+        working-directory: ios
+        run: |
+          xcodebuild -project FocusBlock.xcodeproj -scheme FocusBlock -configuration Release \
+            -archivePath build/FocusBlock.xcarchive \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            APP_PROFILE_NAME="$APP_PROFILE_NAME" \
+            MONITOR_PROFILE_NAME="$MONITOR_PROFILE_NAME" \
+            archive
+
+      - name: Write export options
+        working-directory: ios
+        run: |
+          cat > ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>development</string>
+              <key>teamID</key>
+              <string>${DEVELOPMENT_TEAM}</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.focusblock.app</key>
+                  <string>${APP_PROFILE_NAME}</string>
+                  <key>com.focusblock.app.monitor</key>
+                  <string>${MONITOR_PROFILE_NAME}</string>
+              </dict>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Export IPA
+        working-directory: ios
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath build/FocusBlock.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist ExportOptions.plist
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FocusBlock-ipa
+          path: ios/build/ipa/*.ipa
