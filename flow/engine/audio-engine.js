@@ -1,0 +1,604 @@
+/*
+ * Undercurrent — FlowAudio
+ *
+ * Everything you hear is synthesized live with the Web Audio API: no audio
+ * files, no streaming, no licensing. The classical pieces are public-domain
+ * compositions played by a small piano voice; the rest is generative.
+ *
+ * Signal path
+ *   track → bus → (dry + convolution reverb) → level → volume → limiter → out
+ *
+ *   level   is driven by FlowModel (typing in / pauses out), ramped in dB
+ *           so a fade sounds even from start to finish.
+ *   volume  is the user's own volume knob.
+ *
+ * When the level reaches silence the AudioContext is suspended. Its clock
+ * stops, so sequenced pieces resume exactly where they left off.
+ */
+(function (root) {
+  'use strict';
+
+  const SILENT_GAIN = 0.0001;
+  const dbToGain = (db) => Math.max(SILENT_GAIN, Math.pow(10, db / 20));
+  const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+  const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  function midi(name) {
+    const m = /^([A-G])(#|b)?(-?\d)$/.exec(name);
+    if (!m) throw new Error('bad note ' + name);
+    return 12 * (Number(m[3]) + 1) + NOTE[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+  }
+
+  // Small, fast, seedable PRNG so generative pieces are varied but reproducible.
+  function rng(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const pick = (r, arr) => arr[Math.floor(r() * arr.length)];
+
+  // ---------------------------------------------------------------- voices
+
+  /** A soft felt-piano: a few partials, fast attack, two-stage decay, darkening filter. */
+  function piano(ctx, out, m, t, vel = 0.5, hold = 1.2) {
+    const f = mtof(m);
+    const amp = ctx.createGain();
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    const bright = 900 + 2600 * vel;
+    lp.frequency.setValueAtTime(Math.min(bright + f * 2, 9000), t);
+    lp.frequency.exponentialRampToValueAtTime(Math.max(500, f * 1.5), t + hold + 1.5);
+    lp.Q.value = 0.3;
+
+    const peak = 0.22 * vel * (m < 48 ? 1.25 : 1); // a little more weight in the bass
+    const end = t + hold + 2.2;
+    amp.gain.setValueAtTime(0, t);
+    amp.gain.linearRampToValueAtTime(peak, t + 0.006);
+    amp.gain.exponentialRampToValueAtTime(peak * 0.35, t + 0.35);
+    amp.gain.exponentialRampToValueAtTime(peak * 0.12, t + hold);
+    amp.gain.exponentialRampToValueAtTime(SILENT_GAIN, end);
+
+    const partials = [
+      [1, 'sine', 1],
+      [1.0015, 'triangle', 0.35],
+      [2.001, 'sine', 0.22],
+      [3.003, 'sine', 0.07],
+    ];
+    for (const [ratio, type, g] of partials) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = f * ratio;
+      const pg = ctx.createGain();
+      pg.gain.value = g;
+      o.connect(pg).connect(lp);
+      o.start(t);
+      o.stop(end + 0.05);
+    }
+    lp.connect(amp).connect(out);
+  }
+
+  // ---------------------------------------------------------------- track base
+
+  class Sequenced {
+    constructor(ctx, out) {
+      this.ctx = ctx;
+      this.bus = ctx.createGain();
+      this.bus.gain.value = 0;
+      this.bus.connect(out);
+      this.next = 0;
+      this.timer = null;
+    }
+    start(fadeSec = 2) {
+      const t = this.ctx.currentTime;
+      this.bus.gain.setValueAtTime(SILENT_GAIN, t);
+      this.bus.gain.exponentialRampToValueAtTime(1, t + fadeSec);
+      this.next = t + 0.15;
+      // Look 2.5 s ahead: hidden tabs/webviews may only get ~1 timer tick per second.
+      this.timer = setInterval(() => this.pump(), 250);
+      this.pump();
+    }
+    pump() {
+      const now = this.ctx.currentTime;
+      if (this.next < now - 0.05) this.next = now + 0.05; // timer was starved; skip, don't cram
+      const horizon = now + 2.5;
+      while (this.next < horizon) this.next += this.step(this.next);
+    }
+    stop(fadeSec = 2.5) {
+      clearInterval(this.timer);
+      const t = this.ctx.currentTime;
+      this.bus.gain.cancelScheduledValues(t);
+      this.bus.gain.setValueAtTime(Math.max(this.bus.gain.value, SILENT_GAIN), t);
+      this.bus.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + fadeSec);
+      setTimeout(() => this.bus.disconnect(), fadeSec * 1000 + 3000);
+    }
+  }
+
+  // ---------------------------------------------------------------- tracks
+
+  /*
+   * J. S. Bach — Prelude in C major, BWV 846 (Well-Tempered Clavier I, 1722).
+   * Bars 1–32 share one figure: five chord tones played 1-2-3-4-5-3-4-5, twice.
+   */
+  const BWV846 = [
+    'C4 E4 G4 C5 E5', 'C4 D4 A4 D5 F5', 'B3 D4 G4 D5 F5', 'C4 E4 G4 C5 E5',
+    'C4 E4 A4 E5 A5', 'C4 D4 F#4 A4 D5', 'B3 D4 G4 D5 G5', 'B3 C4 E4 G4 C5',
+    'A3 C4 E4 G4 C5', 'D3 A3 D4 F#4 C5', 'G3 B3 D4 G4 B4', 'G3 Bb3 E4 G4 C#5',
+    'F3 A3 D4 A4 D5', 'F3 Ab3 D4 F4 B4', 'E3 G3 C4 G4 C5', 'E3 F3 A3 C4 F4',
+    'D3 F3 A3 C4 F4', 'G2 D3 G3 B3 F4', 'C3 E3 G3 C4 E4', 'C3 G3 Bb3 C4 E4',
+    'F2 F3 A3 C4 E4', 'F#2 C3 A3 C4 Eb4', 'Ab2 F3 B3 C4 D4', 'G2 F3 G3 B3 D4',
+    'G2 E3 G3 C4 E4', 'G2 D3 G3 C4 F4', 'G2 D3 G3 B3 F4', 'G2 Eb3 A3 C4 F#4',
+    'G2 E3 G3 C4 G4', 'G2 D3 G3 C4 F4', 'G2 D3 G3 B3 F4', 'C2 C3 G3 Bb3 E4',
+  ].map((bar) => bar.split(' ').map(midi));
+  const BWV846_CODA = [
+    'C2 C3 F3 A3 C4 F4 C4 A3 C4 A3 F3 A3 F3 D3 F3 D3',
+    'C2 B2 G4 B4 D5 F5 D5 B4 D5 B4 G4 B4 D4 F4 E4 D4',
+  ].map((bar) => bar.split(' ').map(midi));
+  const BWV846_FINAL = 'C2 C3 E4 G4 C5'.split(' ').map(midi);
+  const FIGURE = [0, 1, 2, 3, 4, 2, 3, 4, 0, 1, 2, 3, 4, 2, 3, 4];
+
+  class Prelude extends Sequenced {
+    constructor(ctx, out) {
+      super(ctx, out);
+      this.r = rng(846);
+      this.sixteenth = 60 / 60 / 4; // ♩ = 60, unhurried
+      this.pos = 0; // sixteenths since start of piece
+    }
+    step(t) {
+      const r = this.r;
+      const s = this.sixteenth;
+      const bar = Math.floor(this.pos / 16);
+      const i = this.pos % 16;
+      const jitter = (r() - 0.5) * 0.012;
+      const totalBars = BWV846.length + BWV846_CODA.length + 3; // + final chord + 2 bars of breath
+      let advance = 1;
+
+      if (bar < BWV846.length) {
+        const chord = BWV846[bar];
+        const idx = FIGURE[i];
+        const accent = i === 0 || i === 8 ? 0.62 : i % 4 === 2 ? 0.48 : 0.42;
+        // The two lowest voices ring on, as Bach wrote them (half note / dotted quarter).
+        const hold = idx === 0 ? s * 8 : idx === 1 ? s * 7 : s * 2.2;
+        piano(this.ctx, this.bus, chord[idx], t + jitter, accent + r() * 0.06, hold);
+      } else if (bar < BWV846.length + BWV846_CODA.length) {
+        const seq = BWV846_CODA[bar - BWV846.length];
+        piano(this.ctx, this.bus, seq[i], t + jitter, i === 0 ? 0.6 : 0.42, i === 0 ? s * 16 : s * 2.2);
+      } else if (bar === BWV846.length + BWV846_CODA.length && i === 0) {
+        BWV846_FINAL.forEach((m, k) => piano(this.ctx, this.bus, m, t + k * 0.045, 0.5, s * 14));
+        advance = 16;
+      }
+      // Ritardando through the last two bars.
+      const slow = bar >= BWV846.length ? 1.12 : 1;
+      this.pos = (this.pos + advance) % (totalBars * 16);
+      return s * slow * advance;
+    }
+  }
+
+  /*
+   * Ground — baroque-style variations over Pachelbel's ground bass
+   * (D A Bm F#m G D G A, c. 1680). The bass repeats; the figuration above it
+   * is generated, so it never plays the same eight bars twice.
+   */
+  class Ground extends Sequenced {
+    constructor(ctx, out) {
+      super(ctx, out);
+      this.r = rng(1680);
+      this.beat = 60 / 56;
+      this.chords = [
+        ['D2', 'D4 F#4 A4'], ['A1', 'C#4 E4 A4'], ['B1', 'D4 F#4 B4'], ['F#2', 'C#4 F#4 A4'],
+        ['G1', 'D4 G4 B4'], ['D2', 'D4 F#4 A4'], ['G1', 'D4 G4 B4'], ['A1', 'C#4 E4 A4'],
+      ].map(([b, c]) => [midi(b), c.split(' ').map(midi)]);
+      this.figures = [
+        [0, 1, 2, 3], [3, 2, 1, 0], [0, 2, 1, 3], [0, 1, 2, 1], [2, 1, 0, 1], [0, 2, 3, 2],
+      ];
+      this.ci = 0;
+      this.n = 0;
+      this.fig = this.figures[0];
+      this.octave = 0;
+    }
+    step(t) {
+      const r = this.r;
+      const [bass, chord] = this.chords[this.ci];
+      const tones = [...chord, chord[0] + 12];
+      if (this.n === 0) {
+        piano(this.ctx, this.bus, bass, t, 0.55, this.beat * 2);
+        piano(this.ctx, this.bus, bass + 12, t + 0.01, 0.25, this.beat * 2);
+        if (this.ci % 2 === 0) {
+          this.fig = pick(r, this.figures);
+          this.octave = r() < 0.25 ? 12 : 0;
+        }
+      }
+      const m = tones[this.fig[this.n % 4]] + this.octave;
+      const vel = (this.n % 4 === 0 ? 0.44 : 0.34) + r() * 0.06;
+      piano(this.ctx, this.bus, m, t + (r() - 0.5) * 0.01, vel, this.beat * 0.7);
+      // Occasionally a sustained top line note, like a melody surfacing.
+      if (this.n === 0 && r() < 0.35) piano(this.ctx, this.bus, pick(r, chord) + 12, t + 0.02, 0.3, this.beat * 3);
+
+      this.n += 1;
+      if (this.n === 8) {
+        this.n = 0;
+        this.ci = (this.ci + 1) % this.chords.length;
+      }
+      return this.beat / 4;
+    }
+  }
+
+  /*
+   * Drift — slow, sparse piano in 3/4, in the spirit of Satie's Gymnopédies
+   * (1888): two gently swaying major-seventh chords and a melody that only
+   * sometimes speaks.
+   */
+  class Drift extends Sequenced {
+    constructor(ctx, out) {
+      super(ctx, out);
+      this.r = rng(1888);
+      this.beat = 60 / 66;
+      this.harmony = [
+        [midi('G2'), ['B3', 'D4', 'F#4'].map(midi)],
+        [midi('D2'), ['A3', 'C#4', 'F#4'].map(midi)],
+      ];
+      this.scale = ['F#4', 'A4', 'B4', 'C#5', 'D5', 'E5', 'F#5'].map(midi);
+      this.mi = 3;
+      this.bar = 0;
+      this.b = 0;
+    }
+    step(t) {
+      const r = this.r;
+      const [bass, chord] = this.harmony[this.bar % 2];
+      const j = (r() - 0.5) * 0.02;
+      if (this.b === 0) {
+        piano(this.ctx, this.bus, bass, t + j, 0.5, this.beat * 3);
+        if (r() < 0.55) {
+          this.mi = Math.max(0, Math.min(this.scale.length - 1, this.mi + pick(r, [-2, -1, -1, 0, 1, 1, 2])));
+          piano(this.ctx, this.bus, this.scale[this.mi], t + 0.04 + j, 0.4 + r() * 0.08, this.beat * 3);
+        }
+      } else if (this.b === 1) {
+        chord.forEach((m, k) => piano(this.ctx, this.bus, m, t + j + k * 0.012, 0.26, this.beat * 1.6));
+      } else if (r() < 0.15) {
+        piano(this.ctx, this.bus, this.scale[Math.max(0, this.mi - 1)], t + j, 0.3, this.beat);
+      }
+      this.b = (this.b + 1) % 3;
+      if (this.b === 0) this.bar += 1;
+      return this.beat;
+    }
+  }
+
+  /** Tide — an evolving, wordless pad. Chords crossfade every ~20 s. */
+  class Tide {
+    constructor(ctx, out) {
+      this.ctx = ctx;
+      this.r = rng(42);
+      this.bus = ctx.createGain();
+      this.bus.gain.value = 0;
+      this.filter = ctx.createBiquadFilter();
+      this.filter.type = 'lowpass';
+      this.filter.frequency.value = 900;
+      this.filter.Q.value = 0.5;
+      this.lfo = ctx.createOscillator();
+      this.lfo.frequency.value = 0.03;
+      const lfoAmt = ctx.createGain();
+      lfoAmt.gain.value = 350;
+      this.lfo.connect(lfoAmt).connect(this.filter.frequency);
+      this.filter.connect(this.bus).connect(out);
+      this.chords = [
+        ['D3', 'A3', 'E4', 'F#4'], ['B2', 'F#3', 'D4', 'A4'], ['G2', 'D3', 'B3', 'F#4'], ['A2', 'E3', 'C#4', 'E4'],
+      ].map((c) => c.map(midi));
+      this.voices = [];
+      this.ci = 0;
+    }
+    _chord(t) {
+      const fade = 8;
+      for (const v of this.voices) {
+        v.g.gain.setValueAtTime(v.g.gain.value, t);
+        v.g.gain.linearRampToValueAtTime(0, t + fade);
+        v.oscs.forEach((o) => o.stop(t + fade + 0.1));
+      }
+      this.voices = this.chords[this.ci].map((m) => {
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.05, t + fade);
+        const oscs = [-7, 0, 6].map((cents) => {
+          const o = this.ctx.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = mtof(m);
+          o.detune.value = cents + (this.r() - 0.5) * 4;
+          o.connect(g);
+          o.start(t);
+          return o;
+        });
+        g.connect(this.filter);
+        return { g, oscs };
+      });
+      this.ci = (this.ci + 1 + (this.r() < 0.3 ? 1 : 0)) % this.chords.length;
+    }
+    start(fadeSec = 3) {
+      const t = this.ctx.currentTime;
+      this.lfo.start(t);
+      this.bus.gain.setValueAtTime(SILENT_GAIN, t);
+      this.bus.gain.exponentialRampToValueAtTime(1, t + fadeSec);
+      this._chord(t);
+      this.nextChange = t + 20;
+      this.timer = setInterval(() => {
+        const now = this.ctx.currentTime;
+        if (now >= this.nextChange - 0.5) {
+          this._chord(Math.max(now, this.nextChange));
+          this.nextChange += 18 + this.r() * 8;
+        }
+      }, 500);
+    }
+    stop(fadeSec = 3) {
+      clearInterval(this.timer);
+      const t = this.ctx.currentTime;
+      this.bus.gain.cancelScheduledValues(t);
+      this.bus.gain.setValueAtTime(Math.max(this.bus.gain.value, SILENT_GAIN), t);
+      this.bus.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + fadeSec);
+      setTimeout(() => {
+        this.voices.forEach((v) => v.oscs.forEach((o) => { try { o.stop(); } catch (_) {} }));
+        try { this.lfo.stop(); } catch (_) {}
+        this.bus.disconnect();
+      }, fadeSec * 1000 + 500);
+    }
+  }
+
+  /** Brown noise — a steady, low, rain-on-the-roof wash. Masks speech without demanding attention. */
+  class Brown {
+    constructor(ctx, out, { dry = true } = {}) {
+      this.ctx = ctx;
+      this.bus = ctx.createGain();
+      this.bus.gain.value = 0;
+      this.bus.connect(out);
+      this.dry = dry;
+    }
+    start(fadeSec = 3) {
+      const ctx = this.ctx;
+      const len = ctx.sampleRate * 8;
+      const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const d = buf.getChannelData(ch);
+        let last = 0;
+        for (let i = 0; i < len; i++) {
+          last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+          d[i] = last * 3.2;
+        }
+        // Crossfade the loop seam so there's no click every 8 s.
+        const x = Math.floor(ctx.sampleRate * 0.5);
+        for (let i = 0; i < x; i++) {
+          const a = i / x;
+          d[i] = d[i] * a + d[len - x + i] * (1 - a);
+        }
+      }
+      this.src = ctx.createBufferSource();
+      this.src.buffer = buf;
+      this.src.loop = true;
+      this.src.loopEnd = (len - Math.floor(ctx.sampleRate * 0.5)) / ctx.sampleRate;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1100;
+      this.src.connect(lp).connect(this.bus);
+      const t = ctx.currentTime;
+      this.bus.gain.setValueAtTime(SILENT_GAIN, t);
+      this.bus.gain.exponentialRampToValueAtTime(0.55, t + fadeSec);
+      this.src.start(t);
+    }
+    stop(fadeSec = 3) {
+      const t = this.ctx.currentTime;
+      this.bus.gain.cancelScheduledValues(t);
+      this.bus.gain.setValueAtTime(Math.max(this.bus.gain.value, SILENT_GAIN), t);
+      this.bus.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + fadeSec);
+      setTimeout(() => { try { this.src.stop(); } catch (_) {} this.bus.disconnect(); }, fadeSec * 1000 + 300);
+    }
+  }
+
+  const TRACKS = {
+    prelude: {
+      id: 'prelude', name: 'Prelude', kind: 'Classical',
+      credit: 'J. S. Bach, Prelude in C major, BWV 846',
+      blurb: 'Even, unbroken arpeggios at 60 bpm. The most predictable music ever written, in the best way.',
+      make: (ctx, out) => new Prelude(ctx, out), reverb: 0.32,
+    },
+    ground: {
+      id: 'ground', name: 'Ground', kind: 'Classical, generative',
+      credit: "Variations over Pachelbel's ground bass",
+      blurb: 'A repeating bass with ever-changing baroque figuration above it. Steady, never quite the same.',
+      make: (ctx, out) => new Ground(ctx, out), reverb: 0.34,
+    },
+    drift: {
+      id: 'drift', name: 'Drift', kind: 'Minimal piano',
+      credit: "In the spirit of Satie's Gymnopédies",
+      blurb: 'Slow, sparse, lots of air. For deep reading and hard problems.',
+      make: (ctx, out) => new Drift(ctx, out), reverb: 0.45,
+    },
+    tide: {
+      id: 'tide', name: 'Tide', kind: 'Ambient',
+      credit: 'Generative pad',
+      blurb: 'No melody, no rhythm, nothing to follow. A warm floor under your thoughts.',
+      make: (ctx, out) => new Tide(ctx, out), reverb: 0.4,
+    },
+    brown: {
+      id: 'brown', name: 'Brown noise', kind: 'Noise',
+      credit: 'Filtered brown noise',
+      blurb: 'A low, steady wash that masks voices and office noise.',
+      make: (ctx, out) => new Brown(ctx, out), reverb: 0,
+    },
+  };
+
+  // ---------------------------------------------------------------- engine
+
+  function makeImpulse(ctx, seconds = 3.2, decay = 2.6) {
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    }
+    return buf;
+  }
+
+  class FlowAudio {
+    constructor({ volume = 0.7, track = 'prelude' } = {}) {
+      this.ctx = null;
+      this.trackId = TRACKS[track] ? track : 'prelude';
+      this.volumeValue = volume;
+      this.levelDb = -48;
+      this.custom = null; // { el } when playing the user's own audio
+      this._suspendTimer = null;
+      this._customRamp = null;
+    }
+
+    static get tracks() {
+      return TRACKS;
+    }
+
+    get running() {
+      return !!this.ctx && this.ctx.state === 'running';
+    }
+
+    _build() {
+      const AC = root.AudioContext || root.webkitAudioContext;
+      const ctx = (this.ctx = new AC({ latencyHint: 'playback' }));
+      this.limiter = ctx.createDynamicsCompressor();
+      this.limiter.threshold.value = -10;
+      this.limiter.ratio.value = 8;
+      this.limiter.attack.value = 0.01;
+      this.limiter.release.value = 0.3;
+      this.volume = ctx.createGain();
+      this.volume.gain.value = this.volumeValue;
+      this.level = ctx.createGain();
+      this.level.gain.value = dbToGain(this.levelDb);
+      this.bus = ctx.createGain();
+      this.dry = ctx.createGain();
+      this.wet = ctx.createGain();
+      this.reverb = ctx.createConvolver();
+      this.reverb.buffer = makeImpulse(ctx);
+      this.bus.connect(this.dry).connect(this.level);
+      this.bus.connect(this.reverb).connect(this.wet).connect(this.level);
+      this.level.connect(this.volume).connect(this.limiter).connect(ctx.destination);
+      this.analyser = ctx.createAnalyser();
+      this.analyser.fftSize = 512;
+      this.limiter.connect(this.analyser);
+    }
+
+    /** Must be called from a user gesture the first time (browser autoplay rules). */
+    async unlock() {
+      if (!this.ctx) this._build();
+      if (this.ctx.state !== 'running') {
+        try { await this.ctx.resume(); } catch (_) { /* handled by caller via .running */ }
+      }
+      if (!this.track && !this.custom) this._startTrack(this.trackId, 0.5);
+      return this.running;
+    }
+
+    _startTrack(id, fadeSec) {
+      const def = TRACKS[id];
+      this.trackId = id;
+      this.wet.gain.setTargetAtTime(def.reverb, this.ctx.currentTime, 0.5);
+      this.dry.gain.setTargetAtTime(1 - def.reverb * 0.5, this.ctx.currentTime, 0.5);
+      this.track = def.make(this.ctx, this.bus);
+      this.track.start(fadeSec);
+    }
+
+    setTrack(id) {
+      if (!TRACKS[id]) return;
+      this._stopCustom();
+      if (!this.ctx) { this.trackId = id; return; }
+      if (this.track && this.trackId === id) return;
+      if (this.track) this.track.stop(2.5);
+      this.track = null;
+      this._startTrack(id, 3);
+    }
+
+    /** Play the user's own audio (a file or URL) instead of a built-in track. */
+    setCustom(src) {
+      if (this.track) { this.track.stop(1.5); this.track = null; }
+      this._stopCustom();
+      const el = new Audio();
+      el.src = src;
+      el.loop = true;
+      el.volume = this.running ? dbToGain(this.levelDb) * this.volumeValue : 0;
+      this.custom = { el, src };
+      this.trackId = 'custom';
+      if (this.levelDb > -40) el.play().catch(() => {});
+    }
+
+    _stopCustom() {
+      if (!this.custom) return;
+      clearInterval(this._customRamp);
+      this.custom.el.pause();
+      this.custom.el.src = '';
+      this.custom = null;
+    }
+
+    setVolume(v) {
+      this.volumeValue = Math.max(0, Math.min(1, v));
+      if (this.ctx) this.volume.gain.setTargetAtTime(this.volumeValue, this.ctx.currentTime, 0.08);
+      if (this.custom) this.custom.el.volume = dbToGain(this.levelDb) * this.volumeValue;
+    }
+
+    /**
+     * Move the flow level to `db` over `rampMs`, linearly in decibels
+     * (exponential in amplitude), which is how loudness is perceived.
+     */
+    async setLevel(db, rampMs, fromDb) {
+      this.levelDb = db;
+      clearTimeout(this._suspendTimer);
+      if (!this.ctx) return;
+      const silent = db <= -40;
+      if (!silent && this.ctx.state === 'suspended') {
+        try { await this.ctx.resume(); } catch (_) {}
+      }
+      const t = this.ctx.currentTime;
+      const g = this.level.gain;
+      const start = fromDb != null ? Math.max(dbToGain(fromDb), g.value) : Math.max(g.value, SILENT_GAIN);
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(Math.max(start, SILENT_GAIN), t);
+      g.exponentialRampToValueAtTime(dbToGain(db), t + Math.max(0.05, rampMs / 1000));
+
+      if (this.custom) this._rampCustom(start, dbToGain(db), rampMs);
+
+      if (silent) {
+        this._suspendTimer = setTimeout(() => {
+          if (this.levelDb <= -40 && this.ctx.state === 'running') this.ctx.suspend();
+          if (this.custom && this.levelDb <= -40) this.custom.el.pause();
+        }, rampMs + 400);
+      }
+    }
+
+    _rampCustom(from, to, rampMs) {
+      clearInterval(this._customRamp);
+      const el = this.custom.el;
+      if (to > SILENT_GAIN * 10 && el.paused) el.play().catch(() => {});
+      const t0 = performance.now();
+      const a = Math.log(Math.max(from, SILENT_GAIN));
+      const b = Math.log(Math.max(to, SILENT_GAIN));
+      this._customRamp = setInterval(() => {
+        const k = Math.min(1, (performance.now() - t0) / Math.max(1, rampMs));
+        el.volume = Math.min(1, Math.exp(a + (b - a) * k) * this.volumeValue);
+        if (k >= 1) clearInterval(this._customRamp);
+      }, 50);
+    }
+
+    /** 0..1 loudness of what's playing right now, for visuals. */
+    meter() {
+      if (!this.analyser || !this.running) return 0;
+      const data = new Uint8Array(this.analyser.fftSize);
+      this.analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      return Math.min(1, Math.sqrt(sum / data.length) * 4);
+    }
+
+    currentLevel() {
+      return this.ctx ? this.level.gain.value : 0;
+    }
+  }
+
+  FlowAudio.dbToGain = dbToGain;
+  root.FlowAudio = FlowAudio;
+})(typeof self !== 'undefined' ? self : this);

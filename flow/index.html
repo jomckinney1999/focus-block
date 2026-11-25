@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Undercurrent</title>
+<meta name="description" content="Focus music for programmers that rises when you type, softens while you think, and lets go when you leave.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="web/styles.css">
+</head>
+<body>
+<!--PAGE-->
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div class="pitch">
+      <p class="eyebrow">Undercurrent · focus music for code</p>
+      <h1>Flow has a sound.</h1>
+      <p class="lede">Music that follows your keyboard. Type and it rises to meet you. Stop to think and it softens. Walk away and it lets you go.</p>
+      <p class="lede quiet">You never press play. You just start working.</p>
+      <div class="cta">
+        <a class="btn primary" href="#install">Get it for VS Code</a>
+        <a class="btn" href="#science">Read the research</a>
+      </div>
+    </div>
+
+    <section class="demo" aria-label="Live demo">
+      <div class="demo-bar">
+        <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="file">flow.ts</span>
+        <span class="pill" id="state-pill" data-state="resting">Resting</span>
+      </div>
+      <div class="editor">
+        <div class="gutter" id="gutter" aria-hidden="true"></div>
+        <label class="sr-only" for="code">Type here to hear the music respond</label>
+        <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off">// Click here and start typing.
+// Three keystrokes bring the music in.
+
+function enterFlow(task: Task): Focus {
+  const noise = silenceNotifications();
+  const music = undercurrent.follow(keyboard);
+  return deepWork(task, { noise, music });
+}
+
+</textarea>
+      </div>
+      <canvas id="trace" height="96" aria-label="Music level over the last minute"></canvas>
+      <div class="readout">
+        <div class="now">
+          <b id="state-word">Start typing</b>
+          <span id="state-note">The music is waiting for your first keystrokes.</span>
+        </div>
+        <div class="controls">
+          <label class="ctl" for="track-select">Music
+            <select id="track-select"></select>
+          </label>
+          <label class="ctl" for="volume">Volume
+            <input id="volume" type="range" min="0" max="100" value="65">
+          </label>
+          <label class="ctl switch" for="speed">
+            <input id="speed" type="checkbox" checked> 10× demo speed
+          </label>
+        </div>
+      </div>
+    </section>
+  </div>
+</header>
+
+<main>
+  <section class="band" id="how">
+    <div class="wrap">
+      <h2>How it moves</h2>
+      <p class="intro">Four states, all driven by what your hands are doing. Every change is a slow ramp, so the music shifts beneath your attention instead of pulling on it.</p>
+      <figure class="timeline">
+        <div class="scroll"><svg id="timeline" viewBox="0 0 900 260" role="img" aria-labelledby="tl-title"><title id="tl-title">Music level across a typing session: full while typing, a soft dip during a thinking pause, a slow fade to silence when away, and a quick return when typing resumes.</title></svg></div>
+        <figcaption>One session, to scale. Ticks along the bottom are keystrokes.</figcaption>
+      </figure>
+      <div class="states">
+        <article><h3><span class="dot flow"></span>In flow</h3><p>You're typing. The music plays at your chosen level.</p><p class="spec">0 dB</p></article>
+        <article><h3><span class="dot soft"></span>Thinking</h3><p>You stopped typing for longer than your usual thinking pause. The music dips to about half as loud over 45 seconds. Scrolling and reading keep it here, never lower.</p><p class="spec">−9 dB · after ~60 s, learned from you</p></article>
+        <article><h3><span class="dot away"></span>Away</h3><p>Five minutes with no typing, scrolling or navigation. The music fades to silence over two minutes and the audio engine sleeps.</p><p class="spec">silence · after 5 min</p></article>
+        <article><h3><span class="dot back"></span>Back</h3><p>Three keystrokes and it returns within seconds, picking up mid-phrase. A stray keypress won't wake it.</p><p class="spec">3 edits in 15 s · 6 s rise</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="band alt" id="science">
+    <div class="wrap">
+      <h2>Built on research, tuned for code</h2>
+      <p class="intro">Each default comes from a finding about attention, music or how programmers work. Where the evidence is thin we say so, and every threshold can be changed.</p>
+      <div class="findings">
+        <article>
+          <h3>Instrumental only</h3>
+          <p>Speech in the background competes with the verbal side of working memory, an effect strongest for music with lyrics. Code is language, so every track is wordless.</p>
+          <cite>Salamé &amp; Baddeley, 1989</cite>
+        </article>
+        <article>
+          <h3>Slow and soft</h3>
+          <p>Fast, loud background music hurt reading comprehension. Slow music at a lower volume did not. Tracks sit between 56 and 66 bpm and default to background level.</p>
+          <cite>Thompson, Schellenberg &amp; Letnic, 2012</cite>
+        </article>
+        <article>
+          <h3>Mood is the mechanism</h3>
+          <p>The famous "Mozart effect" turned out to be a lift in arousal and mood, not anything special about Mozart. Software developers who worked with music they chose reported better mood and better quality of work.</p>
+          <cite>Thompson, Schellenberg &amp; Husain, 2001 · Lesiuk, 2005</cite>
+        </article>
+        <article>
+          <h3>Changes you don't notice</h3>
+          <p>Sudden changes in sound trigger an automatic orienting response that pulls attention toward them. So nothing in Undercurrent starts, stops or jumps. Dips take 45 seconds and fades take two minutes, ramped evenly in decibels.</p>
+          <cite>Sokolov, 1963 · Näätänen et al., 2007</cite>
+        </article>
+        <article>
+          <h3>Thinking is coding</h3>
+          <p>Professional developers spend about 58% of their time understanding code rather than writing it. Reading keeps the music alive, and a pause is judged against your own rhythm, learned from your last few hundred thinking pauses.</p>
+          <cite>Xia et al., 2018 · Medimorec &amp; Risko, 2017</cite>
+        </article>
+        <article>
+          <h3>Getting back is the hard part</h3>
+          <p>After an interruption, programmers rarely resume editing within a minute. When you return, the music comes back within seconds and continues from where it was, a familiar cue that you're back in it.</p>
+          <cite>Parnin &amp; Rugaber, 2011</cite>
+        </article>
+        <article>
+          <h3>Noise suits some minds</h3>
+          <p>A moderate level of ambient noise helped creative thinking, and steady noise helped inattentive students on memory tasks. If melody is too much for you, brown noise gets the same flow-following behaviour.</p>
+          <cite>Mehta, Zhu &amp; Cheema, 2012 · Söderlund et al., 2007</cite>
+        </article>
+        <article class="caveat">
+          <h3>What the research doesn't say</h3>
+          <p>Across studies, background music's effects on performance are small and differ from person to person. Music won't put you in flow. It can make the conditions more comfortable and mark the moment you begin. That's why Undercurrent adapts to you and never asks for attention.</p>
+          <cite>Kämpfe, Sedlmeier &amp; Renkewitz, 2011 · Csikszentmihalyi, 1990</cite>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="music">
+    <div class="wrap">
+      <h2>Five ways to sound</h2>
+      <p class="intro">Everything is played live by a synthesizer in your editor. No streaming, no ads, nothing to buy. The classical pieces are public-domain compositions. Or point it at your own stream.</p>
+      <div class="tracks" id="track-cards"></div>
+    </div>
+  </section>
+
+  <section class="band alt" id="install">
+    <div class="wrap install">
+      <div>
+        <h2>Lives in VS Code</h2>
+        <p class="intro">Undercurrent is a VS Code extension. It only notices that the file in front of you changed, never what you typed, and nothing leaves your machine.</p>
+        <ol class="steps">
+          <li><span>Build the extension from this repo:</span><code>cd flow/vscode &amp;&amp; npm run package</code></li>
+          <li><span>Install it:</span><code>code --install-extension undercurrent-0.1.0.vsix</code></li>
+          <li><span>Open the Undercurrent panel and click once to allow audio. Then start typing.</span></li>
+        </ol>
+      </div>
+      <dl class="keys">
+        <div><dt>Play / pause</dt><dd><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>M</kbd></dd></div>
+        <div><dt>Keep playing while I read</dt><dd>Command palette → Undercurrent: Keep Playing</dd></div>
+        <div><dt>Change music</dt><dd>Command palette → Undercurrent: Choose Music</dd></div>
+        <div><dt>Tune the thresholds</dt><dd>Settings → Undercurrent</dd></div>
+      </dl>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <p>Undercurrent. Made for the minutes when the code writes itself.</p>
+</footer>
+<!--/PAGE-->
+<script src="engine/flow-model.js"></script>
+<script src="engine/audio-engine.js"></script>
+<script src="web/app.js"></script>
+</body>
+</html>
