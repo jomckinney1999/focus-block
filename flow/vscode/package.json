@@ -1,0 +1,79 @@
+{
+  "name": "undercurrent",
+  "displayName": "Undercurrent — music that follows your flow",
+  "description": "Focus music that rises when you type, softens while you think, and lets go when you leave. Tuned from research on music, attention, and how programmers actually work.",
+  "version": "0.1.0",
+  "publisher": "undercurrent",
+  "license": "UNLICENSED",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "keywords": ["focus", "flow", "music", "productivity", "deep work", "pomodoro", "lofi", "classical"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "viewsContainers": {
+      "panel": [{ "id": "undercurrent", "title": "Undercurrent", "icon": "media/icon.svg" }]
+    },
+    "views": {
+      "undercurrent": [{ "type": "webview", "id": "undercurrent.player", "name": "Undercurrent" }]
+    },
+    "commands": [
+      { "command": "undercurrent.toggle", "title": "Play / Pause", "category": "Undercurrent" },
+      { "command": "undercurrent.open", "title": "Open Player", "category": "Undercurrent" },
+      { "command": "undercurrent.chooseTrack", "title": "Choose Music", "category": "Undercurrent" },
+      { "command": "undercurrent.hold", "title": "Keep Playing While I Read…", "category": "Undercurrent" },
+      { "command": "undercurrent.releaseHold", "title": "Stop Keeping It Playing", "category": "Undercurrent" },
+      { "command": "undercurrent.resetLearning", "title": "Relearn My Typing Rhythm", "category": "Undercurrent" }
+    ],
+    "keybindings": [
+      { "command": "undercurrent.toggle", "key": "ctrl+alt+m", "mac": "cmd+alt+m" }
+    ],
+    "configuration": {
+      "title": "Undercurrent",
+      "properties": {
+        "undercurrent.track": {
+          "type": "string",
+          "default": "prelude",
+          "enum": ["prelude", "ground", "drift", "tide", "brown"],
+          "enumDescriptions": [
+            "J. S. Bach, Prelude in C major, BWV 846",
+            "Baroque variations over Pachelbel's ground bass",
+            "Sparse piano in the spirit of Satie's Gymnopédies",
+            "Ambient pad, no melody",
+            "Brown noise"
+          ],
+          "description": "The music to play."
+        },
+        "undercurrent.volume": {
+          "type": "number", "default": 60, "minimum": 0, "maximum": 100,
+          "description": "Overall volume. Research favours moderate, background-level loudness: you should be able to stop noticing it."
+        },
+        "undercurrent.softenAfterSeconds": {
+          "type": "number", "default": 0, "minimum": 0, "maximum": 600,
+          "description": "Seconds without typing before the music softens. 0 = learn it from your own thinking pauses (recommended)."
+        },
+        "undercurrent.softLevelDb": {
+          "type": "number", "default": -9, "minimum": -30, "maximum": 0,
+          "description": "How far the music dips while you think or read, in dB. -9 dB sounds about half as loud."
+        },
+        "undercurrent.awayAfterMinutes": {
+          "type": "number", "default": 5, "minimum": 1, "maximum": 60,
+          "description": "Minutes with no typing, scrolling, or navigation before the music fades out completely."
+        },
+        "undercurrent.startOnLaunch": {
+          "type": "boolean", "default": true,
+          "description": "Load the player when VS Code starts, so typing can bring the music in."
+        },
+        "undercurrent.customStreamUrl": {
+          "type": "string", "default": "",
+          "description": "Optional https URL of your own audio stream or file to play instead of the built-in music. Flow fades still apply."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "sync": "node ../scripts/sync-engine.js",
+    "vscode:prepublish": "node ../scripts/sync-engine.js",
+    "package": "npx --yes @vscode/vsce package --allow-missing-repository"
+  }
+}

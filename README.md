@@ -1,5 +1,7 @@
 # Focus Block
 
+> Also in this repo: **[Undercurrent](flow/)**, focus music for programmers that follows your typing. See `flow/README.md`.
+
 A personal PWA dashboard for focus sessions — start/timer/streaks/history — sitting on top of iOS's own Screen Time and Focus Mode, which do the actual blocking. See the "How this actually works" section before you rely on it.
 
 ## How this actually works (read this first)
