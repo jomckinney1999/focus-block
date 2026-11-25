@@ -45,6 +45,10 @@ npm test                 # model, extension smoke test, engine sync check
 python3 -m http.server   # then open http://localhost:8000 for the landing page + live demo
 ```
 
+### Deploy the landing page (Vercel)
+
+The site is static: `index.html`, `web/`, and `engine/`. In Vercel, **Add New → Project → import `focus-block`**, set **Root Directory** to `flow`, framework preset **Other**, and leave the build command empty. `vercel.json` handles headers, and `.vercelignore` keeps the extension and tests out of the deploy. Every push to `master` then deploys to production, and every PR gets a preview URL.
+
 ### VS Code extension
 
 ```bash
