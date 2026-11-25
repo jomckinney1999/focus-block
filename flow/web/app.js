@@ -78,6 +78,8 @@
     if (!audio.running) await audio.unlock();
   }
 
+  // Phones only allow audio to start from a tap, so unlock on the tap into the editor too.
+  code.addEventListener('pointerdown', () => { ensureAudio(); });
   code.addEventListener('keydown', () => { ensureAudio(); });
   code.addEventListener('input', () => {
     keys.push(performance.now());
