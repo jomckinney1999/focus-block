@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c1517">
+<link rel="icon" href="/web/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/web/styles.css">
+<title>Privacy · Undercurrent</title>
+</head>
+<body>
+<main class="wrap doc">
+  <p class="eyebrow"><a href="/">Undercurrent</a></p>
+  <h1>Privacy</h1>
+  <p>Short version: Undercurrent never sees what you type, and nothing it learns leaves your machine.</p>
+  <h2>The VS Code extension</h2>
+  <ul>
+    <li>It notices <em>that</em> the file in front of you changed, and when you scroll or move around. It never reads the contents of your edits.</li>
+    <li>It remembers the length of your recent thinking pauses and the start and end times of your flow sessions, so it can tune itself and show you today's totals.</li>
+    <li>That information is stored in VS Code's local storage on your computer. It is not sent anywhere.</li>
+    <li>All music is generated on your computer. Nothing is streamed unless you set your own stream URL, in which case your editor connects to the address you chose.</li>
+  </ul>
+  <h2>This website</h2>
+  <ul>
+    <li>The demo runs entirely in your browser. What you type in it is not sent anywhere.</li>
+    <li>Fonts load from Google Fonts, which receives your IP address as part of serving them.</li>
+    <li>The site is hosted on Vercel, which keeps standard server logs.</li>
+  </ul>
+  <h2>Questions</h2>
+  <p>Open an issue on the project's GitHub repository.</p>
+</main>
+</body>
+</html>
