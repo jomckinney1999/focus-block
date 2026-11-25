@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Undercurrent</title>
 <meta name="description" content="Focus music for programmers that rises when you type, softens while you think, and lets go when you leave.">
+<meta name="theme-color" content="#0c1517">
+<link rel="icon" href="web/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Undercurrent: flow has a sound">
+<meta property="og:description" content="Focus music for programmers. Type and it rises to meet you. Pause to think and it softens. Walk away and it lets you go.">
+<meta property="og:image" content="/web/og.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -68,6 +75,36 @@ function enterFlow(task: Task): Focus {
 </header>
 
 <main>
+  <section class="band" id="editor">
+    <div class="wrap">
+      <h2>Right where you work</h2>
+      <p class="intro">Undercurrent sits in VS Code's bottom panel and status bar. Most of the time you'll forget it's there, which is the point.</p>
+      <figure class="vsc" aria-label="Undercurrent running inside VS Code">
+        <div class="vsc-title"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span>scheduler.ts — focus-block</span></div>
+        <div class="vsc-body">
+          <div class="vsc-rail" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div class="vsc-main">
+            <div class="vsc-tabs"><span class="on">scheduler.ts</span><span>queue.ts</span></div>
+<pre class="vsc-code"><span class="ln">41</span>  <span class="kw">export function</span> nextSlot(queue: Job[], now: <span class="ty">Date</span>) {
+<span class="ln">42</span>    <span class="kw">const</span> ready = queue.filter((j) =&gt; j.runAt &lt;= now);
+<span class="ln">43</span>    <span class="kw">if</span> (!ready.length) <span class="kw">return</span> <span class="kw">null</span>;
+<span class="ln">44</span>    <span class="kw">return</span> ready.sort(byPriority)[0]<span class="caret"></span></pre>
+            <div class="vsc-panel">
+              <div class="vsc-panel-tabs"><span>Problems</span><span>Terminal</span><span class="on">Undercurrent</span></div>
+              <div class="vsc-player">
+                <div class="vsc-now"><span class="vsc-orb" aria-hidden="true"></span><div><b>In flow</b><small>The music is with you.</small></div></div>
+                <div class="vsc-chips"><span class="on">Prelude</span><span>Ground</span><span>Drift</span><span>Tide</span><span>Brown noise</span></div>
+                <div class="vsc-facts"><span>Now <b>38m</b></span><span>Today <b>2h 14m</b></span><span>Longest <b>52m</b></span></div>
+                <p class="vsc-learn">Softens after <b>47 s</b> without typing. Learned from 212 of your thinking pauses.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="vsc-status"><span>main</span><span class="grow"></span><span>TypeScript</span><span class="uc">〰 38m</span></div>
+      </figure>
+    </div>
+  </section>
+
   <section class="band" id="how">
     <div class="wrap">
       <h2>How it moves</h2>
@@ -165,6 +202,7 @@ function enterFlow(task: Task): Focus {
 
 <footer class="wrap foot">
   <p>Undercurrent. Made for the minutes when the code writes itself.</p>
+  <p><a href="privacy">Privacy</a></p>
 </footer>
 <!--/PAGE-->
 <script src="engine/flow-model.js"></script>
