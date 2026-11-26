@@ -49,17 +49,18 @@ python3 -m http.server   # then open http://localhost:8000 for the landing page 
 
 The site is static: `index.html`, `web/`, and `engine/`. In Vercel, **Add New → Project → import `focus-block`**, set **Root Directory** to `flow`, framework preset **Other**, and leave the build command empty. `vercel.json` handles headers, and `.vercelignore` keeps the extension and tests out of the deploy. Every push to `master` then deploys to production, and every PR gets a preview URL.
 
-### VS Code extension
+### Install the VS Code extension (1 minute)
 
-```bash
-cd flow/vscode
-npm run package          # syncs the engine and builds undercurrent-0.1.0.vsix
-code --install-extension undercurrent-0.1.0.vsix
-```
+1. **Download** [`download/undercurrent.vsix`](download/undercurrent.vsix), or get it from the website's install section.
+2. **Install:** in VS Code press `Ctrl+Shift+P` (Mac: `Cmd+Shift+P`), run **Extensions: Install from VSIX…**, and pick the file.
+3. **Start:** click **Open Player** in the welcome message, click inside the player once to allow sound, and start typing.
 
-Or open `flow/vscode` in VS Code and press F5 to run it in an Extension Development Host. After editing anything in `flow/engine/`, run `npm run sync` (the extension carries its own copy; a test fails if they drift).
+`Ctrl+Alt+M` / `Cmd+Alt+M` plays and pauses. Settings live under **Settings → Undercurrent**.
 
-Open the **Undercurrent** panel, click once to allow audio, then type. `Ctrl+Alt+M` / `Cmd+Alt+M` plays and pauses. Settings live under **Settings → Undercurrent**.
+### Working on the extension
+
+- **Run from source:** open the `flow/vscode` folder itself in VS Code and press **F5**. `.vscode/launch.json` is included, so a second "[Extension Development Host]" window opens with Undercurrent loaded.
+- **Rebuild the download** after any change: `cd flow/vscode && npm run package`. This syncs `flow/engine/` into the extension and writes `flow/download/undercurrent.vsix`, which the website serves. Commit the new file.
 
 ## Known limits
 

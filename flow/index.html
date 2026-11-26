@@ -10,7 +10,11 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="Undercurrent: flow has a sound">
 <meta property="og:description" content="Focus music for programmers. Type and it rises to meet you. Pause to think and it softens. Walk away and it lets you go.">
-<meta property="og:image" content="/web/og.png">
+<link rel="canonical" href="https://focus-block-flow.vercel.app/">
+<meta property="og:url" content="https://focus-block-flow.vercel.app/">
+<meta property="og:image" content="https://focus-block-flow.vercel.app/web/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -27,7 +31,7 @@
       <p class="lede">Music that follows your keyboard. Type and it rises to meet you. Stop to think and it softens. Walk away and it lets you go.</p>
       <p class="lede quiet">You never press play. You just start working.</p>
       <div class="cta">
-        <a class="btn primary" href="#install">Get it for VS Code</a>
+        <a class="btn primary" href="#install">Get it for VS Code, free</a>
         <a class="btn" href="#science">Read the research</a>
       </div>
     </div>
@@ -182,19 +186,35 @@ function enterFlow(task: Task): Focus {
   <section class="band alt" id="install">
     <div class="wrap install">
       <div>
-        <h2>Lives in VS Code</h2>
-        <p class="intro">Undercurrent is a VS Code extension. It only notices that the file in front of you changed, never what you typed, and nothing leaves your machine.</p>
-        <ol class="steps">
-          <li><span>Build the extension from this repo:</span><code>cd flow/vscode &amp;&amp; npm run package</code></li>
-          <li><span>Install it:</span><code>code --install-extension undercurrent-0.1.0.vsix</code></li>
-          <li><span>Open the Undercurrent panel and click once to allow audio. Then start typing.</span></li>
+        <h2>Running in VS Code in a minute</h2>
+        <p class="intro">No terminal, no build. Undercurrent only notices that the file in front of you changed, never what you typed, and nothing leaves your machine.</p>
+        <ol class="steps big">
+          <li>
+            <b>Download the extension</b>
+            <span>One small file, about 22 KB.</span>
+            <a class="btn primary dl" href="download/undercurrent.vsix" download>Download undercurrent.vsix</a>
+          </li>
+          <li>
+            <b>Install it in VS Code</b>
+            <span>Open the Command Palette with <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> (Mac: <kbd>Cmd</kbd> <kbd>Shift</kbd> <kbd>P</kbd>), type <em>install from vsix</em>, press Enter, and choose the file you downloaded.</span>
+          </li>
+          <li>
+            <b>Click once, then type</b>
+            <span>Click <em>Open Player</em> in the welcome message, then click inside the player once to allow sound. Start typing in any file and the music comes in.</span>
+          </li>
         </ol>
+        <details class="alt-install">
+          <summary>Prefer the terminal?</summary>
+          <code>code --install-extension undercurrent.vsix</code>
+          <span>Run it in the folder you downloaded to, then restart VS Code.</span>
+        </details>
       </div>
       <dl class="keys">
-        <div><dt>Play / pause</dt><dd><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>M</kbd></dd></div>
-        <div><dt>Keep playing while I read</dt><dd>Command palette → Undercurrent: Keep Playing</dd></div>
-        <div><dt>Change music</dt><dd>Command palette → Undercurrent: Choose Music</dd></div>
-        <div><dt>Tune the thresholds</dt><dd>Settings → Undercurrent</dd></div>
+        <div><dt>Play / pause</dt><dd><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>M</kbd> (Mac: <kbd>Cmd</kbd> <kbd>Alt</kbd> <kbd>M</kbd>)</dd></div>
+        <div><dt>Can't see the player?</dt><dd>Command Palette → <em>Undercurrent: Open Player</em></dd></div>
+        <div><dt>Hearing nothing?</dt><dd>Click inside the player once. VS Code only plays sound after a click.</dd></div>
+        <div><dt>Keep playing while I read</dt><dd>Command Palette → <em>Undercurrent: Keep Playing</em></dd></div>
+        <div><dt>Change music</dt><dd>Click a track in the player, or Command Palette → <em>Undercurrent: Choose Music</em></dd></div>
       </dl>
     </div>
   </section>
