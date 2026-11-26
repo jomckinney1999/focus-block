@@ -13,8 +13,9 @@ Every transition is slow on purpose: sudden changes in sound pull attention, and
 
 ## Use
 
-1. Open the **Undercurrent** panel and click once to allow audio.
-2. Start typing.
+1. Click **Open Player** in the welcome message, or run **Undercurrent: Open Player** from the Command Palette.
+2. Click inside the player once to allow sound.
+3. Start typing in any file.
 
 `Ctrl+Alt+M` / `Cmd+Alt+M` plays and pauses. Command palette: **Undercurrent: Choose Music**, **Keep Playing While I Read…**, **Relearn My Typing Rhythm**.
 

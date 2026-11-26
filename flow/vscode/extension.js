@@ -13,6 +13,7 @@ const FlowModel = require('./media/engine/flow-model.js');
 
 const VIEW_ID = 'undercurrent.player';
 const LEARNED_KEY = 'undercurrent.learned';
+const WELCOMED_KEY = 'undercurrent.welcomed';
 
 const TRACKS = [
   { id: 'prelude', label: 'Prelude', detail: 'J. S. Bach, Prelude in C major, BWV 846' },
@@ -313,6 +314,18 @@ function activate(context) {
   );
 
   if (cfg().get('startOnLaunch', true)) player.open(true);
+  welcomeOnFirstRun(context, player);
+}
+
+/** First install only: say what to do next, with one button that does it. */
+async function welcomeOnFirstRun(context, player) {
+  if (context.globalState.get(WELCOMED_KEY)) return;
+  await context.globalState.update(WELCOMED_KEY, true);
+  const choice = await vscode.window.showInformationMessage(
+    'Undercurrent is installed. Open the player, click it once to allow sound, then just start typing.',
+    'Open Player'
+  );
+  if (choice === 'Open Player') player.open();
 }
 
 function deactivate() {}
