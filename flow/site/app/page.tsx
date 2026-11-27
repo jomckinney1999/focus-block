@@ -35,14 +35,14 @@ export default function Home() {
       {/* One underwater world for the whole page: the hero's scene, dimmed, stays behind everything,
           getting darker the further you scroll, so the page reads as one dive rather than separate blocks. */}
       <div aria-hidden className="fixed inset-0 -z-10 bg-ink">
-        <div className="absolute inset-0 bg-[url('/media/deep-water.jpg')] bg-cover bg-center opacity-45" />
+        <div className="absolute inset-0 bg-[url('/media/underwater-bg.jpg')] bg-cover bg-top opacity-40" />
         <div className="absolute inset-0 bg-[radial-gradient(70%_55%_at_50%_0%,rgba(120,203,187,0.10),transparent_70%),linear-gradient(180deg,rgba(7,16,18,0.35)_0%,rgba(7,16,18,0.82)_60%,rgba(7,16,18,0.95)_100%)]" />
       </div>
       <ScrollExpandMedia
         mediaType="video"
-        mediaSrc="/media/undercurrent-demo.mp4"
-        posterSrc="/media/demo-poster.jpg"
-        bgImageSrc="/media/deep-water.jpg"
+        mediaSrc="/media/underwater-surface.mp4"
+        posterSrc="/media/underwater-surface-poster.jpg"
+        bgImageSrc="/media/underwater-bg.jpg"
         title="Flow has a sound"
         date="Undercurrent"
         scrollToExpand="Scroll to dive in"
