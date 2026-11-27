@@ -159,6 +159,7 @@ export function LiveDemo() {
         ref={codeRef}
         defaultValue={START}
         spellCheck={false}
+        wrap="off"
         autoCapitalize="off"
         autoComplete="off"
         onPointerDown={() => { takeOver(); soundOn(); }}

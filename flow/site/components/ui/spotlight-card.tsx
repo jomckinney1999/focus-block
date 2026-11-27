@@ -5,7 +5,7 @@ import React, { useEffect, useRef, ReactNode } from 'react';
 interface GlowCardProps {
   children: ReactNode;
   className?: string;
-  glowColor?: 'blue' | 'purple' | 'green' | 'red' | 'orange';
+  glowColor?: 'blue' | 'purple' | 'green' | 'red' | 'orange' | 'sea' | 'gold';
   size?: 'sm' | 'md' | 'lg';
   width?: string | number;
   height?: string | number;
@@ -17,7 +17,10 @@ const glowColorMap = {
   purple: { base: 280, spread: 300 },
   green: { base: 120, spread: 200 },
   red: { base: 0, spread: 200 },
-  orange: { base: 30, spread: 200 }
+  orange: { base: 30, spread: 200 },
+  // Added: Undercurrent's own palette. A narrow spread keeps the glow on-brand as the pointer moves.
+  sea: { base: 160, spread: 30 },
+  gold: { base: 34, spread: 14 }
 };
 
 const sizeMap = {
