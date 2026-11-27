@@ -52,3 +52,12 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 @media (prefers-reduced-motion: reduce) {
   .eq-bar { animation: none; }
 }
+
+/* Everything you can press looks and feels pressable. (Tailwind v4 leaves buttons on the default cursor.) */
+@layer base {
+  button:not(:disabled), [role="button"], [role="tab"], a[href], label[for], select, summary, input[type="checkbox"], input[type="range"], input[type="file"] {
+    cursor: pointer;
+  }
+  button:not(:disabled) { transition: transform 0.12s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease; }
+  button:not(:disabled):active { transform: scale(0.96); }
+}
