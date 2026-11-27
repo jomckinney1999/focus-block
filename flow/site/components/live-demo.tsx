@@ -25,9 +25,13 @@ const SCRIPT: Array<{ type?: string; wait?: number }> = [
 const LABEL: Record<FlowState, string> = { flow: "In flow", soft: "Thinking", resting: "Resting", paused: "Paused" };
 const TRACKS = [
   { id: "prelude", name: "Bach" },
+  { id: "noir", name: "Noir jazz" },
+  { id: "lofi", name: "Lo-fi" },
   { id: "drift", name: "Piano" },
+  { id: "rain", name: "Rain" },
+  { id: "waves", name: "Waves" },
+  { id: "hearth", name: "Fire" },
   { id: "tide", name: "Ambient" },
-  { id: "brown", name: "Noise" },
 ];
 
 export function LiveDemo() {

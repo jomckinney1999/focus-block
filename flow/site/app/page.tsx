@@ -59,7 +59,7 @@ export default function Home() {
               <a href="#get" className="flex items-center gap-2 rounded-full bg-sea px-6 py-3 font-medium text-ink transition hover:brightness-110">
                 Get it free <ArrowRight className="size-4" />
               </a>
-              <a href="#try" className="glass rounded-full px-6 py-3 font-medium text-fog">Try it</a>
+              <Link href="/focus" className="glass rounded-full px-6 py-3 font-medium text-fog">Open the focus room</Link>
             </div>
           </section>
 
@@ -149,7 +149,10 @@ export default function Home() {
 
           <footer className="flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 border-t border-white/10 py-10 text-sm text-mist">
             <p>Undercurrent. Made for the minutes when the code writes itself.</p>
-            <Link href="/privacy" className="hover:text-fog">Privacy</Link>
+            <div className="flex gap-6">
+              <Link href="/focus" className="hover:text-fog">Focus room</Link>
+              <Link href="/privacy" className="hover:text-fog">Privacy</Link>
+            </div>
           </footer>
         </div>
       </ScrollExpandMedia>

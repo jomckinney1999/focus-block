@@ -2,7 +2,7 @@
   "name": "undercurrent",
   "displayName": "Undercurrent \u2014 music that follows your flow",
   "description": "Focus music that rises when you type, softens while you think, and lets go when you leave. Tuned from research on music, attention, and how programmers actually work.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "undercurrent",
   "license": "UNLICENSED",
   "engines": {
@@ -94,14 +94,24 @@
             "ground",
             "drift",
             "tide",
-            "brown"
+            "brown",
+            "noir",
+            "lofi",
+            "rain",
+            "waves",
+            "hearth"
           ],
           "enumDescriptions": [
             "J. S. Bach, Prelude in C major, BWV 846",
             "Baroque variations over Pachelbel's ground bass",
             "Sparse piano in the spirit of Satie's Gymnop\u00e9dies",
             "Ambient pad, no melody",
-            "Brown noise"
+            "Brown noise",
+            "Late-night jazz: walking bass, brushes, smoky keys",
+            "Dusky lo-fi beats with vinyl crackle",
+            "Steady rain",
+            "Slow ocean swells",
+            "A crackling fire over a warm hum"
           ],
           "description": "The music to play."
         },

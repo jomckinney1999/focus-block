@@ -164,6 +164,11 @@ function status() {
       { id: 'drift', name: 'Drift', credit: 'Sparse piano, after Satie' },
       { id: 'tide', name: 'Tide', credit: 'Ambient pad' },
       { id: 'brown', name: 'Brown noise', credit: 'Low, steady noise' },
+      { id: 'noir', name: 'Noir', credit: 'Late-night jazz: walking bass, brushes, smoky keys' },
+      { id: 'lofi', name: 'Lo-fi', credit: 'Dusky lo-fi beats with vinyl crackle' },
+      { id: 'rain', name: 'Rain', credit: 'Steady rain' },
+      { id: 'waves', name: 'Waves', credit: 'Slow ocean swells' },
+      { id: 'hearth', name: 'Hearth', credit: 'A crackling fire over a warm hum' },
     ],
   };
 }

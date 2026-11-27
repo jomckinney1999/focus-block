@@ -21,6 +21,11 @@ const TRACKS = [
   { id: 'drift', label: 'Drift', detail: "Sparse piano, in the spirit of Satie's Gymnopédies" },
   { id: 'tide', label: 'Tide', detail: 'Ambient pad, no melody' },
   { id: 'brown', label: 'Brown noise', detail: 'Low, steady noise' },
+  { id: 'noir', label: 'Noir', detail: 'Late-night jazz: walking bass, brushes, smoky keys' },
+  { id: 'lofi', label: 'Lo-fi', detail: 'Dusky lo-fi beats with vinyl crackle' },
+  { id: 'rain', label: 'Rain', detail: 'Steady rain' },
+  { id: 'waves', label: 'Waves', detail: 'Slow ocean swells' },
+  { id: 'hearth', label: 'Hearth', detail: 'A crackling fire over a warm hum' },
 ];
 
 const STATE_TEXT = {

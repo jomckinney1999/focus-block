@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Undercurrent: Focus Music That Follows Your Typing",
   "short_name": "Undercurrent",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Focus music that rises when you type, softens when you think, and holds distracting sites at bay while you're in flow.",
   "homepage_url": "https://focus-block-flow.vercel.app/",
   "minimum_chrome_version": "116",

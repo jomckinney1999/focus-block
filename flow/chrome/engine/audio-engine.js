@@ -96,7 +96,8 @@
     start(fadeSec = 2) {
       const t = this.ctx.currentTime;
       this.bus.gain.setValueAtTime(SILENT_GAIN, t);
-      this.bus.gain.exponentialRampToValueAtTime(1, t + fadeSec);
+      // Per-track trim so every track sits at a similar loudness (about -25 LUFS).
+      this.bus.gain.exponentialRampToValueAtTime(this.trim || 1, t + fadeSec);
       this.next = t + 0.15;
       // Look 2.5 s ahead: hidden tabs/webviews may only get ~1 timer tick per second.
       this.timer = setInterval(() => this.pump(), 250);
@@ -236,6 +237,7 @@
     constructor(ctx, out) {
       super(ctx, out);
       this.r = rng(1888);
+      this.trim = 1.5;
       this.beat = 60 / 66;
       this.harmony = [
         [midi('G2'), ['B3', 'D4', 'F#4'].map(midi)],
@@ -393,6 +395,365 @@
     }
   }
 
+  // ---------------------------------------------------------------- more voices
+
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const noiseCache = new WeakMap();
+  /** Two seconds of white noise per context, shared by every noise voice. */
+  function whiteNoise(ctx) {
+    let buf = noiseCache.get(ctx);
+    if (!buf) {
+      const len = ctx.sampleRate * 2;
+      buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      noiseCache.set(ctx, buf);
+    }
+    return buf;
+  }
+  /** A filtered burst of noise: brushes, cymbals, rain drops, fire crackle. */
+  function noiseHit(ctx, out, t, { dur = 0.1, type = 'bandpass', freq = 3000, q = 0.8, gain = 0.1, attack = 0.002, sweepTo } = {}) {
+    const src = ctx.createBufferSource();
+    src.buffer = whiteNoise(ctx);
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.setValueAtTime(freq, t);
+    if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
+    f.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + attack);
+    g.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + dur);
+    src.connect(f).connect(g).connect(out);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + dur + 0.05);
+  }
+  /** A continuous filtered noise bed (rain body, waves, fire rumble). Returns the nodes to stop later. */
+  function noiseBed(ctx, out, { type = 'lowpass', freq = 800, q = 0.7, gain = 0.1 } = {}) {
+    const src = ctx.createBufferSource();
+    src.buffer = whiteNoise(ctx);
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    src.connect(f).connect(g).connect(out);
+    src.start();
+    return { src, filter: f, gain: g };
+  }
+  /** Electric piano, Rhodes-like: an FM bell tone on a warm body. */
+  function epiano(ctx, out, m, t, vel = 0.4, hold = 1.5) {
+    const f = mtof(m);
+    const end = t + hold + 1.8;
+    const car = ctx.createOscillator();
+    car.frequency.value = f;
+    const mod = ctx.createOscillator();
+    mod.frequency.value = f;
+    const modGain = ctx.createGain();
+    modGain.gain.setValueAtTime(f * 1.4 * vel, t);
+    modGain.gain.exponentialRampToValueAtTime(f * 0.1, t + 0.6);
+    mod.connect(modGain).connect(car.frequency);
+    const tine = ctx.createOscillator();
+    tine.frequency.value = f * 14;
+    const tineGain = ctx.createGain();
+    tineGain.gain.setValueAtTime(0.025 * vel, t);
+    tineGain.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + 0.12);
+    tine.connect(tineGain);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2400;
+    const amp = ctx.createGain();
+    const peak = 0.13 * vel;
+    amp.gain.setValueAtTime(0, t);
+    amp.gain.linearRampToValueAtTime(peak, t + 0.005);
+    amp.gain.exponentialRampToValueAtTime(peak * 0.45, t + 0.4);
+    amp.gain.exponentialRampToValueAtTime(peak * 0.2, t + hold);
+    amp.gain.exponentialRampToValueAtTime(SILENT_GAIN, end);
+    car.connect(lp);
+    tineGain.connect(lp);
+    lp.connect(amp).connect(out);
+    for (const o of [car, mod, tine]) { o.start(t); o.stop(end + 0.05); }
+  }
+  /** Upright bass: a round, plucked low note. */
+  function bass(ctx, out, m, t, vel = 0.5, dur = 0.7) {
+    const f = mtof(m);
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = f;
+    const sub = ctx.createOscillator();
+    sub.frequency.value = f;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(900, t);
+    lp.frequency.exponentialRampToValueAtTime(250, t + 0.25);
+    lp.Q.value = 2;
+    const g = ctx.createGain();
+    const peak = 0.3 * vel;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(peak * 0.4, t + 0.18);
+    g.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + dur);
+    o.connect(lp);
+    sub.connect(lp);
+    lp.connect(g).connect(out);
+    for (const x of [o, sub]) { x.start(t); x.stop(t + dur + 0.05); }
+  }
+  /** Vibraphone: a pure tone with a slow motor tremolo. */
+  function vibes(ctx, out, m, t, vel = 0.3, dur = 2.5) {
+    const f = mtof(m);
+    const o = ctx.createOscillator();
+    o.frequency.value = f;
+    const over = ctx.createOscillator();
+    over.frequency.value = f * 4;
+    const overGain = ctx.createGain();
+    overGain.gain.value = 0.07;
+    over.connect(overGain);
+    const trem = ctx.createGain();
+    trem.gain.value = 0.75;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 5;
+    const lfoAmt = ctx.createGain();
+    lfoAmt.gain.value = 0.25;
+    lfo.connect(lfoAmt).connect(trem.gain);
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0, t);
+    amp.gain.linearRampToValueAtTime(0.11 * vel, t + 0.004);
+    amp.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + dur);
+    o.connect(trem);
+    overGain.connect(trem);
+    trem.connect(amp).connect(out);
+    for (const x of [o, over, lfo]) { x.start(t); x.stop(t + dur + 0.05); }
+  }
+  /** A soft, rounded kick drum. */
+  function kick(ctx, out, t, vel = 0.6) {
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(105, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.45 * vel, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + 0.4);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.45);
+  }
+
+  /** Puts a chord's pitch classes into the octave above a bass root, for walking lines. */
+  const inBassRange = (root, m) => root + (((m % 12) - (root % 12) + 12) % 12);
+
+  /*
+   * Noir — a late-night jazz club. Walking upright bass, brushes and ride,
+   * smoky electric-piano chords and the odd vibraphone note, at a slow swing.
+   * Melody stays sparse on purpose: jazz's improvised lines are what pull
+   * attention, so here the band only ever plays the room.
+   */
+  class Noir extends Sequenced {
+    constructor(ctx, out) {
+      super(ctx, out);
+      this.r = rng(1947);
+      this.beat = 60 / 66;
+      const chord = (b, c) => [midi(b), c.split(' ').map(midi)];
+      this.bars = [
+        chord('C2', 'Eb3 G3 Bb3 D4'), chord('C2', 'Eb3 G3 Bb3 D4'),
+        chord('F2', 'Ab3 C4 Eb4 G4'), chord('F2', 'Ab3 C4 Eb4 G4'),
+        chord('D2', 'F3 Ab3 C4'), chord('G1', 'F3 B3 D4 Ab4'),
+        chord('C2', 'Eb3 G3 Bb3 D4'), chord('Ab1', 'G3 C4 Eb4'),
+      ];
+      this.scale = ['C5', 'D5', 'Eb5', 'F5', 'G5', 'Bb5', 'C6'].map(midi);
+      this.mi = 3;
+      this.bar = 0;
+      this.e = 0; // eighth note in the bar, 0..7
+    }
+    step(t) {
+      const r = this.r;
+      const ctx = this.ctx;
+      const out = this.bus;
+      const [root, chord] = this.bars[this.bar];
+      const nextRoot = this.bars[(this.bar + 1) % this.bars.length][0];
+      const e = this.e;
+      const onBeat = e % 2 === 0;
+      const beat = e >> 1;
+      const j = (r() - 0.5) * 0.014;
+      if (onBeat) {
+        // Walking bass: root on 1, chord tones in between, a chromatic step into the next bar.
+        let m = root;
+        if (beat === 3) m = inBassRange(root, nextRoot) + (r() < 0.5 ? 1 : -1);
+        else if (beat > 0) m = inBassRange(root, pick(r, chord));
+        bass(ctx, out, m, t + j, 0.55 + r() * 0.1, this.beat * 0.95);
+        noiseHit(ctx, out, t + j, { type: 'highpass', freq: 6200, dur: 0.38, gain: 0.03 }); // ride
+        if (beat === 1 || beat === 3) noiseHit(ctx, out, t + j, { type: 'bandpass', freq: 1700, q: 0.6, dur: 0.45, gain: 0.045, attack: 0.07, sweepTo: 900 }); // brush swish
+        if (beat === 0 && r() < 0.6) chord.forEach((m2, k) => epiano(ctx, out, m2, t + j + k * 0.014, 0.3 + r() * 0.06, this.beat * 1.6));
+        if (r() < 0.1) {
+          this.mi = clamp(this.mi + pick(r, [-2, -1, 1, 2]), 0, this.scale.length - 1);
+          vibes(ctx, out, this.scale[this.mi], t + 0.02, 0.32, 2.8);
+        }
+      } else {
+        if (beat === 1 || beat === 3) noiseHit(ctx, out, t + j, { type: 'highpass', freq: 6800, dur: 0.18, gain: 0.02 }); // the swung "-a-" of the ride
+        if (beat === 1 && r() < 0.4) chord.forEach((m2, k) => epiano(ctx, out, m2, t + j + k * 0.01, 0.26, this.beat));
+      }
+      this.e = (e + 1) % 8;
+      if (this.e === 0) this.bar = (this.bar + 1) % this.bars.length;
+      return onBeat ? this.beat * 0.64 : this.beat * 0.36; // swing
+    }
+  }
+
+  /* Lo-fi — dusky beats: soft kick and snare, mellow keys, a little vinyl crackle. */
+  class LoFi extends Sequenced {
+    constructor(ctx, out) {
+      super(ctx, out);
+      this.r = rng(2019);
+      this.trim = 1.7;
+      this.beat = 60 / 72;
+      const chord = (b, c) => [midi(b), c.split(' ').map(midi)];
+      this.bars = [
+        chord('F2', 'A3 C4 E4 G4'), chord('E2', 'G3 B3 D4'),
+        chord('D2', 'F3 A3 C4 E4'), chord('C2', 'E3 G3 B3 D4'),
+      ];
+      this.bar = 0;
+      this.e = 0;
+    }
+    step(t) {
+      const r = this.r;
+      const ctx = this.ctx;
+      const out = this.bus;
+      const [root, chord] = this.bars[this.bar];
+      const e = this.e;
+      const j = (r() - 0.5) * 0.02;
+      if (e === 0) chord.forEach((m, k) => epiano(ctx, out, m, t + k * 0.02, 0.34, this.beat * 3.6));
+      if (e === 0 || e === 5) {
+        kick(ctx, out, t + j, 0.55);
+        bass(ctx, out, root, t + j, 0.5, this.beat * 1.4);
+      }
+      if (e === 2 || e === 6) {
+        noiseHit(ctx, out, t + j, { type: 'bandpass', freq: 1600, q: 0.7, dur: 0.22, gain: 0.07 }); // soft snare
+        noiseHit(ctx, out, t + j, { type: 'lowpass', freq: 400, q: 0.5, dur: 0.12, gain: 0.05 });
+      }
+      noiseHit(ctx, out, t + j, { type: 'highpass', freq: 8500, dur: 0.05, gain: e % 2 ? 0.01 : 0.016 }); // hat
+      if (r() < 0.5) noiseHit(ctx, out, t + r() * 0.3, { type: 'highpass', freq: 3000, dur: 0.008, gain: 0.02 + r() * 0.02 }); // crackle
+      this.e = (e + 1) % 8;
+      if (this.e === 0) this.bar = (this.bar + 1) % this.bars.length;
+      return e % 2 === 0 ? this.beat * 0.56 : this.beat * 0.44; // lazy swing
+    }
+  }
+
+  /* Rain — a steady shower: a soft hiss, a low body, and scattered drops. */
+  class Rain extends Sequenced {
+    constructor(ctx, out) {
+      super(ctx, out);
+      this.r = rng(7);
+      this.trim = 2.6;
+      this.beds = [];
+    }
+    start(fadeSec) {
+      super.start(fadeSec);
+      this.beds = [
+        noiseBed(this.ctx, this.bus, { type: 'bandpass', freq: 2600, q: 0.35, gain: 0.05 }),
+        noiseBed(this.ctx, this.bus, { type: 'lowpass', freq: 420, q: 0.5, gain: 0.07 }),
+      ];
+    }
+    step(t) {
+      const r = this.r;
+      const ctx = this.ctx;
+      const f = 1800 + r() * 4200;
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(f, t);
+      o.frequency.exponentialRampToValueAtTime(f * 0.7, t + 0.03);
+      const g = ctx.createGain();
+      const peak = 0.004 + r() * 0.014;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(peak, t + 0.002);
+      g.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + 0.04);
+      o.connect(g).connect(this.bus);
+      o.start(t);
+      o.stop(t + 0.05);
+      if (r() < 0.3) noiseHit(ctx, this.bus, t, { type: 'highpass', freq: 5000, dur: 0.02, gain: 0.015 });
+      return 0.015 + r() * 0.09;
+    }
+    stop(fadeSec = 2.5) {
+      super.stop(fadeSec);
+      setTimeout(() => this.beds.forEach((b) => { try { b.src.stop(); } catch (_) {} }), fadeSec * 1000 + 500);
+    }
+  }
+
+  /* Waves — slow ocean swells breathing in and out, roughly every 8–12 seconds. */
+  class Waves {
+    constructor(ctx, out) {
+      this.ctx = ctx;
+      this.bus = ctx.createGain();
+      this.bus.gain.value = 0;
+      this.bus.connect(out);
+      this.parts = [];
+    }
+    start(fadeSec = 3) {
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      for (const [rate, freq, depth, gain] of [[0.1, 700, 500, 0.22], [0.071, 380, 220, 0.18], [0.13, 2400, 900, 0.05]]) {
+        const bed = noiseBed(ctx, this.bus, { type: 'lowpass', freq, q: 0.4, gain });
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = rate;
+        const toFreq = ctx.createGain();
+        toFreq.gain.value = depth;
+        const toGain = ctx.createGain();
+        toGain.gain.value = gain * 0.85;
+        lfo.connect(toFreq).connect(bed.filter.frequency);
+        lfo.connect(toGain).connect(bed.gain.gain);
+        lfo.start(t);
+        this.parts.push(bed.src, lfo);
+      }
+      this.bus.gain.setValueAtTime(SILENT_GAIN, t);
+      this.bus.gain.exponentialRampToValueAtTime(1, t + fadeSec);
+    }
+    stop(fadeSec = 3) {
+      const t = this.ctx.currentTime;
+      this.bus.gain.cancelScheduledValues(t);
+      this.bus.gain.setValueAtTime(Math.max(this.bus.gain.value, SILENT_GAIN), t);
+      this.bus.gain.exponentialRampToValueAtTime(SILENT_GAIN, t + fadeSec);
+      setTimeout(() => { this.parts.forEach((p) => { try { p.stop(); } catch (_) {} }); this.bus.disconnect(); }, fadeSec * 1000 + 400);
+    }
+  }
+
+  /* Hearth — a crackling fire over a low, warm hum. */
+  class Hearth extends Sequenced {
+    constructor(ctx, out) {
+      super(ctx, out);
+      this.r = rng(1666);
+      this.trim = 3.4;
+      this.parts = [];
+    }
+    start(fadeSec) {
+      super.start(fadeSec);
+      const ctx = this.ctx;
+      const rumble = noiseBed(ctx, this.bus, { type: 'lowpass', freq: 260, q: 0.6, gain: 0.16 });
+      this.parts.push(rumble.src);
+      for (const [m, g] of [[midi('F2'), 0.018], [midi('C3'), 0.012]]) {
+        const o = ctx.createOscillator();
+        o.frequency.value = mtof(m);
+        const gain = ctx.createGain();
+        gain.gain.value = g;
+        o.connect(gain).connect(this.bus);
+        o.start();
+        this.parts.push(o);
+      }
+    }
+    step(t) {
+      const r = this.r;
+      const n = r() < 0.25 ? 3 + Math.floor(r() * 4) : 1; // crackles come in little clusters
+      for (let i = 0; i < n; i++) {
+        noiseHit(this.ctx, this.bus, t + i * (0.01 + r() * 0.04), {
+          type: 'bandpass', freq: 1500 + r() * 5000, q: 1.2, dur: 0.012 + r() * 0.03, gain: 0.03 + r() * 0.09,
+        });
+      }
+      if (r() < 0.06) noiseHit(this.ctx, this.bus, t, { type: 'bandpass', freq: 700, q: 1.5, dur: 0.08, gain: 0.14 }); // a log pops
+      return 0.05 + r() * 0.35;
+    }
+    stop(fadeSec = 2.5) {
+      super.stop(fadeSec);
+      setTimeout(() => this.parts.forEach((p) => { try { p.stop(); } catch (_) {} }), fadeSec * 1000 + 500);
+    }
+  }
+
   const TRACKS = {
     prelude: {
       id: 'prelude', name: 'Prelude', kind: 'Classical',
@@ -423,6 +784,36 @@
       credit: 'Filtered brown noise',
       blurb: 'A low, steady wash that masks voices and office noise.',
       make: (ctx, out) => new Brown(ctx, out), reverb: 0,
+    },
+    noir: {
+      id: 'noir', name: 'Noir', kind: 'Jazz',
+      credit: 'Late-night jazz trio, generative',
+      blurb: 'Walking bass, brushes and smoky keys at a slow swing. The band plays the room, never a solo.',
+      make: (ctx, out) => new Noir(ctx, out), reverb: 0.3,
+    },
+    lofi: {
+      id: 'lofi', name: 'Lo-fi', kind: 'Beats',
+      credit: 'Dusky lo-fi, generative',
+      blurb: 'Soft kick and snare, mellow keys, a little vinyl crackle. Steady as a heartbeat.',
+      make: (ctx, out) => new LoFi(ctx, out), reverb: 0.22,
+    },
+    rain: {
+      id: 'rain', name: 'Rain', kind: 'Nature',
+      credit: 'Synthesized rain',
+      blurb: 'A steady shower with scattered drops. Nothing to follow, everything to settle into.',
+      make: (ctx, out) => new Rain(ctx, out), reverb: 0.12,
+    },
+    waves: {
+      id: 'waves', name: 'Waves', kind: 'Nature',
+      credit: 'Synthesized ocean swells',
+      blurb: 'Slow swells breathing in and out. The undercurrent, literally.',
+      make: (ctx, out) => new Waves(ctx, out), reverb: 0.15,
+    },
+    hearth: {
+      id: 'hearth', name: 'Hearth', kind: 'Ambient',
+      credit: 'Synthesized fire',
+      blurb: 'A crackling fire over a low, warm hum.',
+      make: (ctx, out) => new Hearth(ctx, out), reverb: 0.1,
     },
   };
 

@@ -36,6 +36,11 @@ All synthesized live, with no audio files, streaming, or licensing:
 - **Drift**: sparse piano in the spirit of Satie's Gymnopédies
 - **Tide**: ambient pad, no melody
 - **Brown noise**
+- **Noir**: late-night jazz trio (walking bass, brushes, electric piano, sparse vibraphone)
+- **Lo-fi**: dusky beats with mellow keys and vinyl crackle
+- **Rain**, **Waves**, **Hearth**: synthesized rain, ocean swells, and a crackling fire
+
+All ten follow the same rules so they don't compete with your thinking: no vocals, slow tempos (under 75 bpm), sparse melody, and matched loudness (about −25 LUFS) so switching never jolts.
 - Or your own stream: set `undercurrent.customStreamUrl`
 
 ## Try it
