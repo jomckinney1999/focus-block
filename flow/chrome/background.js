@@ -27,6 +27,7 @@ const SNOOZE_MS = 10 * 60_000;
 const RUNTIME_KEYS = ['state', 'lastEdit', 'lastPresence', 'recentEdits', 'holdUntil', 'sessionStart'];
 
 let model = null;
+let lastHeard = null; // { at, host }: last typing signal, shown in the popup to help debugging
 let settings = null;
 let snoozes = {};
 let loading = null;
@@ -46,6 +47,7 @@ async function load() {
     if (model.lastPresence == null) model.lastPresence = -Infinity;
   }
   snoozes = session.snoozes || {};
+  lastHeard = session.lastHeard || null;
 }
 
 function ready() {
@@ -56,7 +58,7 @@ function ready() {
 function saveRuntime() {
   const runtime = {};
   for (const k of RUNTIME_KEYS) runtime[k] = model[k];
-  return chrome.storage.session.set({ runtime, snoozes });
+  return chrome.storage.session.set({ runtime, snoozes, lastHeard });
 }
 
 function saveLearned() {
@@ -124,8 +126,17 @@ async function after(t) {
   await saveRuntime();
 }
 
-async function onEdit() {
-  if (!settings.enabled) return;
+function hostOf(sender) {
+  try {
+    return new URL((sender.tab && sender.tab.url) || sender.url).hostname.replace(/^www\./, '');
+  } catch (_) {
+    return '';
+  }
+}
+
+async function onEdit(sender) {
+  lastHeard = { at: Date.now(), host: hostOf(sender) };
+  if (!settings.enabled) return saveRuntime();
   await after(model.edit(Date.now()));
 }
 
@@ -144,6 +155,8 @@ function status() {
     state: model.state,
     stats: model.stats(now),
     grace: model.graceInfo(),
+    lastHeard,
+    now,
     settings,
     tracks: [
       { id: 'prelude', name: 'Prelude', credit: 'J. S. Bach, BWV 846' },
@@ -214,7 +227,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     await ready();
     switch (msg.type) {
-      case 'edit': return onEdit();
+      case 'edit': return onEdit(sender);
       case 'presence': return onPresence();
       case 'tick': return onTick();
       case 'hello': {
@@ -255,5 +268,26 @@ chrome.commands.onCommand.addListener(async (command) => {
 function startAlarm() {
   chrome.alarms.create('tick', { periodInMinutes: 0.5 });
 }
-chrome.runtime.onInstalled.addListener(startAlarm);
+
+/**
+ * Chrome only adds content scripts to pages loaded after install, so tabs that were
+ * already open (or open during an update) would never report typing. Add it to them now.
+ */
+async function injectIntoOpenTabs() {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(
+    tabs
+      .filter((tab) => tab.id != null && /^(https?|file):/.test(tab.url || ''))
+      .map((tab) =>
+        chrome.scripting
+          .executeScript({ target: { tabId: tab.id, allFrames: true }, files: ['content.js'] })
+          .catch(() => {}) // e.g. the Chrome Web Store, or a page that's still loading
+      )
+  );
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  startAlarm();
+  injectIntoOpenTabs();
+});
 chrome.runtime.onStartup.addListener(startAlarm);

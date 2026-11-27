@@ -29,6 +29,14 @@
     $('now').textContent = fmt(s.stats.currentMs);
     $('today').textContent = fmt(s.stats.todayMs);
     $('longest').textContent = fmt(s.stats.longestTodayMs);
+    const h = s.lastHeard;
+    if (h) {
+      const ago = Math.max(0, Math.round((s.now - h.at) / 1000));
+      const when = ago < 60 ? `${ago} s ago` : `${Math.round(ago / 60)} min ago`;
+      $('heard').textContent = `Last typing heard: ${when}${h.host ? ` on ${h.host}` : ''}.`;
+    } else {
+      $('heard').textContent = 'No typing heard yet. If you are typing in a tab, reload that tab once.';
+    }
     const g = s.grace;
     $('grace').textContent = g.learned
       ? `Softens after ${Math.round(g.ms / 1000)} s without typing, learned from ${g.samples} of your pauses.`
