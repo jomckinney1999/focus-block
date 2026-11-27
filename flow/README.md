@@ -8,6 +8,7 @@ flow/
 │   ├── flow-model.js    typing → flow state → target level (pure, clock-injected, tested)
 │   └── audio-engine.js  Web Audio synth: 5 tracks, reverb, dB ramps, suspend on silence
 ├── vscode/          the product: a VS Code extension
+├── chrome/          Chrome extension (beta): music in any tab + flow shield
 │   ├── extension.js     watches edits/navigation, runs the model, drives the status bar
 │   └── media/           the player webview (makes the sound)
 ├── index.html, web/ landing page with a live "type here" demo
@@ -56,6 +57,22 @@ The site is static: `index.html`, `web/`, and `engine/`. In Vercel, **Add New �
 3. **Start:** click **Open Player** in the welcome message, click inside the player once to allow sound, and start typing.
 
 `Ctrl+Alt+M` / `Cmd+Alt+M` plays and pauses. Settings live under **Settings → Undercurrent**.
+
+### Chrome extension (beta)
+
+Same music and flow model, for typing anywhere in the browser, plus a **flow shield**: while you're in flow, sites on your list (YouTube, X, Reddit… editable in the popup) show a pause screen with a one-click "open anyway for 10 minutes".
+
+1. Download [`download/undercurrent-chrome.zip`](download/undercurrent-chrome.zip) and unzip it somewhere it can stay.
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and choose the unzipped folder.
+3. Pin Undercurrent from the puzzle-piece menu and start typing in any text box. `Alt+Shift+M` plays and pauses.
+
+How it's built:
+- `background.js` runs FlowModel and saves its state to `chrome.storage.session`, since Chrome stops idle service workers. A 30 s alarm, plus a 5 s heartbeat while music plays, drives ticks.
+- `offscreen.html` plays the audio.
+- `content.js` reports typing timing (never keys) and shows the shield.
+- `popup.html` holds the controls.
+
+Rebuild the zip with `npm run package:chrome` from `flow/`.
 
 ### Working on the extension
 

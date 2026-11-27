@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Undercurrent: Focus Music That Follows Your Typing",
+  "short_name": "Undercurrent",
+  "version": "0.1.0",
+  "description": "Focus music that rises when you type, softens when you think, and holds distracting sites at bay while you're in flow.",
+  "homepage_url": "https://focus-block-flow.vercel.app/",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "offscreen", "alarms"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ],
+  "action": {
+    "default_title": "Undercurrent",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png" }
+  },
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "commands": {
+    "toggle-music": {
+      "suggested_key": { "default": "Alt+Shift+M" },
+      "description": "Play or pause the music"
+    }
+  }
+}

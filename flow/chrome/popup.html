@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Undercurrent</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<main>
+  <header>
+    <span class="dot" id="dot" aria-hidden="true"></span>
+    <div>
+      <h1 id="state">Resting</h1>
+      <p id="sub">Start typing anywhere. The music will find you.</p>
+    </div>
+    <button id="toggle" class="primary">Start</button>
+  </header>
+
+  <dl class="stats">
+    <div><dt>Now</dt><dd id="now">0m</dd></div>
+    <div><dt>Today</dt><dd id="today">0m</dd></div>
+    <div><dt>Longest</dt><dd id="longest">0m</dd></div>
+  </dl>
+
+  <label class="field" for="intention">What are you working on?
+    <input id="intention" type="text" maxlength="80" placeholder="e.g. Finish the auth refactor">
+  </label>
+
+  <div class="row">
+    <label class="field" for="track">Music
+      <select id="track"></select>
+    </label>
+    <label class="field" for="volume">Volume
+      <input id="volume" type="range" min="0" max="100">
+    </label>
+  </div>
+
+  <label class="switch" for="enabled"><input id="enabled" type="checkbox"> Follow my typing</label>
+  <label class="switch" for="shield"><input id="shield" type="checkbox"> Flow shield: pause distracting sites while I'm in flow</label>
+
+  <details>
+    <summary>Sites the shield holds back</summary>
+    <label class="field" for="sites">One per line
+      <textarea id="sites" rows="6" spellcheck="false"></textarea>
+    </label>
+    <button id="save-sites">Save sites</button>
+    <span id="saved" class="saved" hidden>Saved</span>
+  </details>
+
+  <p class="foot" id="grace"></p>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>

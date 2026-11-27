@@ -271,3 +271,4 @@ kbd { font: 0.8rem var(--mono); border: 1px solid var(--line); border-bottom-wid
 .alt-install { color: var(--dim); font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.4rem; }
 .alt-install summary { cursor: pointer; color: var(--fg); }
 .alt-install code { font: 0.85rem var(--mono); color: var(--code-fg); background: var(--surface-2); padding: 0.5rem 0.7rem; border-radius: 8px; display: block; overflow-x: auto; white-space: nowrap; margin-top: 0.4rem; }
+.keys a { color: var(--accent); }
