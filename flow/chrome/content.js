@@ -8,10 +8,14 @@
  */
 (() => {
   'use strict';
-  if (window.__undercurrent) return;
-  window.__undercurrent = true;
+  // Each copy of this script gets an id. After an update, a fresh copy is added to open
+  // tabs; any older copy still in the page notices it's been replaced and goes quiet.
+  const me = Math.random().toString(36).slice(2);
+  window.__undercurrentId = me;
+  const current = () => window.__undercurrentId === me && !!(chrome.runtime && chrome.runtime.id);
 
   function send(msg) {
+    if (!current()) return Promise.resolve(null);
     try {
       return chrome.runtime.sendMessage(msg).catch(() => null);
     } catch (_) {
