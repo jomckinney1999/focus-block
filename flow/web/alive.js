@@ -73,6 +73,138 @@
     if (el.matches('.btn, .track')) el.addEventListener('click', () => cue('click', i));
   });
 
+  // ------------------------------------------------------------------ liquid glass sheen
+
+  document.querySelectorAll('.track, .keys, .findings .caveat, .btn:not(.primary), .sound-pill').forEach((el) => {
+    el.addEventListener('pointermove', (e) => {
+      const r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+      el.style.setProperty('--my', `${e.clientY - r.top}px`);
+    });
+  });
+
+  // ------------------------------------------------------------------ immersive sound
+  //
+  // With sound on: a quiet underwater bed that fills in as the music fades (so silence
+  // never feels dead), a water-drop "plip" on each keystroke in the demo, and a soft
+  // airy swell when a new section drifts into view. All far quieter than the music.
+
+  const fx = { bed: null, out: null };
+  function fxOut() {
+    const ctx = UC.audio.ctx;
+    if (!ctx) return null;
+    if (!fx.out) {
+      fx.out = ctx.createGain();
+      fx.out.gain.value = 1;
+      fx.out.connect(ctx.destination);
+    }
+    return fx.out;
+  }
+  function noiseBuffer(ctx, seconds) {
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+      d[i] = last * 3.5;
+    }
+    return buf;
+  }
+  function startBed() {
+    const ctx = UC.audio.ctx;
+    const out = fxOut();
+    if (!ctx || !out || fx.bed) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(ctx, 6);
+    src.loop = true;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 380;
+    lp.Q.value = 0.7;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.07;
+    const lfoAmt = ctx.createGain();
+    lfoAmt.gain.value = 140;
+    lfo.connect(lfoAmt).connect(lp.frequency);
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(lp).connect(gain).connect(out);
+    src.start();
+    lfo.start();
+    fx.bed = { src, lfo, gain };
+  }
+  function stopBed() {
+    if (!fx.bed) return;
+    const { src, lfo, gain } = fx.bed;
+    const t = UC.audio.ctx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setTargetAtTime(0, t, 0.4);
+    setTimeout(() => { try { src.stop(); lfo.stop(); } catch (_) {} }, 2500);
+    fx.bed = null;
+  }
+  UC.on('sound', (on) => (on ? startBed() : stopBed()));
+  // The bed breathes opposite the music: present when it's quiet, nearly gone in full flow.
+  setInterval(() => {
+    if (!fx.bed || !UC.audio.ctx) return;
+    const level = Math.max(0, (UC.levelAt(performance.now()) + 48) / 48);
+    const vol = Number(document.getElementById('volume').value) / 100;
+    fx.bed.gain.gain.setTargetAtTime((0.05 - level * 0.035) * vol, UC.audio.ctx.currentTime, 1.2);
+  }, 500);
+
+  let lastDrop = 0;
+  function drop() {
+    const ctx = UC.audio.ctx;
+    const out = fxOut();
+    if (!UC.isSoundOn() || !ctx || !out || ctx.state !== 'running') return;
+    const now = performance.now();
+    if (now - lastDrop < 70) return;
+    lastDrop = now;
+    const t = ctx.currentTime + 0.005;
+    const f = 440 * Math.pow(2, (SCALE[Math.floor(Math.random() * SCALE.length)] + 12 - 69) / 12);
+    const o = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f * 1.25, t);
+    o.frequency.exponentialRampToValueAtTime(f, t + 0.05);
+    g2.gain.setValueAtTime(0, t);
+    g2.gain.linearRampToValueAtTime(0.018, t + 0.004);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    o.connect(g2).connect(out);
+    o.start(t);
+    o.stop(t + 0.3);
+  }
+  UC.on('key', drop);
+
+  let lastSwell = 0;
+  function swell() {
+    const ctx = UC.audio.ctx;
+    const out = fxOut();
+    if (!UC.isSoundOn() || !ctx || !out || ctx.state !== 'running') return;
+    const now = performance.now();
+    if (now - lastSwell < 1800) return;
+    lastSwell = now;
+    const t = ctx.currentTime + 0.01;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(ctx, 1.6);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(260, t);
+    bp.frequency.exponentialRampToValueAtTime(1400, t + 1.1);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0, t);
+    g2.gain.linearRampToValueAtTime(0.03, t + 0.5);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+    src.connect(bp).connect(g2).connect(out);
+    src.start(t);
+    src.stop(t + 1.6);
+  }
+
+  // Invite sound once: a soft ring on the pill until it's been turned on.
+  if (!reduce) soundBtn.classList.add('nudge');
+  UC.on('sound', (on) => { if (on) soundBtn.classList.remove('nudge'); });
+
   // ------------------------------------------------------------------ the current (hero canvas)
 
   const hero = document.querySelector('.hero');
@@ -283,6 +415,7 @@
       entries.forEach((e) => {
         if (!e.isIntersecting) return;
         e.target.classList.add('in');
+        if (e.target.matches('h2')) swell();
         revealer.unobserve(e.target);
       });
     }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
