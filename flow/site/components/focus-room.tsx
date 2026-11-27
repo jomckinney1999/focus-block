@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowLeft, Pause, Play, RotateCcw, Settings2, Maximize2, Minimize2, Volume2, VolumeX,
-  Waves, Moon, Sunset, CloudRain, Flame, Sparkles, ImagePlus, Link2, X, Music2, type LucideIcon,
+  Waves, Moon, Sunset, CloudRain, Flame, Sparkles, ImagePlus, Link2, X, Music2, Keyboard, type LucideIcon,
 } from "lucide-react";
 import { SceneCanvas } from "@/components/scene-canvas";
 import { SCENES, type SceneId } from "@/lib/scenes";
@@ -32,6 +32,38 @@ const TRACKS = [
   ["tide", "Ambient"], ["rain", "Rain"], ["waves", "Waves"], ["hearth", "Fire"], ["brown", "Brown noise"],
 ] as const;
 const STORE = "undercurrent.focus";
+const SESSION = "undercurrent.session"; // where you left off
+const STATS = "undercurrent.stats"; // focus minutes per day, this device only
+
+type Snapshot = { mood: SceneId; phase: Phase; running: boolean; endAt: number; remaining: number; done: number; track: string; savedAt: number; left?: number };
+
+const dayKey = (t = Date.now()) => new Date(t).toLocaleDateString("en-CA");
+function readStats(): Record<string, { ms: number; sessions: number }> {
+  try { return JSON.parse(localStorage.getItem(STATS) || "{}"); } catch { return {}; }
+}
+function addFocus(ms: number) {
+  const all = readStats();
+  const k = dayKey();
+  all[k] = { ms: (all[k]?.ms ?? 0) + ms, sessions: (all[k]?.sessions ?? 0) + 1 };
+  try { localStorage.setItem(STATS, JSON.stringify(all)); } catch { /* ignore */ }
+  return all[k];
+}
+const todayStats = () => readStats()[dayKey()] ?? { ms: 0, sessions: 0 };
+function readSnapshot(): Snapshot | null {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION) || "null") as Snapshot | null;
+    // Forget anything older than half a day.
+    return s && Date.now() - s.savedAt < 12 * 3600_000 ? s : null;
+  } catch { return null; }
+}
+const fmtLong = (ms: number) => {
+  const m = Math.round(ms / 60_000);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+};
+const SHORTCUTS: Array<[string, string]> = [
+  ["Space", "Start or pause"], ["R", "Reset the timer"], ["F", "Full screen"], ["M", "Mute"],
+  ["S", "Timer settings"], ["B", "Background"], ["1 – 6", "Switch mood"], ["Esc", "Close or go back"], ["?", "These shortcuts"],
+];
 const isVideo = (s: string) => /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(s);
 
 function load(): Settings {
@@ -101,6 +133,12 @@ export function FocusRoom() {
   const [spotifyReady, setSpotifyReady] = useState(false);
   const [bgUrlInput, setBgUrlInput] = useState("");
   const [bgError, setBgError] = useState("");
+  const [idle, setIdle] = useState(false);
+  const [help, setHelp] = useState(false);
+  const [celebrate, setCelebrate] = useState<null | { ms: number; sessions: number }>(null);
+  const [resumeOffer, setResumeOffer] = useState<Snapshot | null>(null);
+  const [needsTap, setNeedsTap] = useState(false);
+  const [today, setToday] = useState({ ms: 0, sessions: 0 });
   const audioRef = useRef<FlowAudio | null>(null);
   const spotifyRef = useRef<SpotifyController | null>(null);
   const spotifyEl = useRef<HTMLDivElement>(null);
@@ -223,6 +261,10 @@ export function FocusRoom() {
         const n = done + 1;
         setDone(n);
         chime(ctx, false);
+        const t = addFocus(durationOf("focus"));
+        setToday(t);
+        setCelebrate(t);
+        setTimeout(() => setCelebrate(null), 5200);
         goTo(n % settings.every === 0 ? "long" : "short", settings.autoNext);
       } else {
         chime(ctx, true);
@@ -230,7 +272,7 @@ export function FocusRoom() {
       }
     }, 250);
     return () => clearInterval(id);
-  }, [running, phase, done, settings.every, settings.autoNext, goTo]);
+  }, [running, phase, done, settings.every, settings.autoNext, goTo, durationOf]);
 
   useEffect(() => {
     document.title = scene === null ? "Focus room · Undercurrent" : `${fmt(remaining)} · ${PHASE_LABEL[phase]}`;
@@ -238,6 +280,7 @@ export function FocusRoom() {
 
   const start = async () => {
     await ensureAudio();
+    setNeedsTap(false);
     endRef.current = Date.now() + remaining;
     setRunning(true);
     level(phase, true, 4000);
@@ -300,16 +343,110 @@ export function FocusRoom() {
     return () => window.removeEventListener("popstate", onPop);
   }, [openMood]);
 
-  // Esc closes an open panel, otherwise leaves the session.
+  // ------------------------------------------------------------------ pick up where you left off
+
+  // Save the session as it changes, so a refresh or a return visit continues it.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || document.fullscreenElement) return;
-      if (panel) setPanel(null);
-      else if (new URLSearchParams(window.location.search).get("mood")) leave();
+    if (scene === null) return;
+    const snap: Snapshot = {
+      mood: SCENES[scene].id, phase, running, endAt: running ? endRef.current : 0,
+      remaining, done, track, savedAt: Date.now(),
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [leave, panel]);
+    try { localStorage.setItem(SESSION, JSON.stringify(snap)); } catch { /* ignore */ }
+    // remaining is saved on each phase/run change; while running, endAt carries the time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scene, phase, running, done, track]);
+
+  // On load: continue a session in progress (same mood in the URL), or offer it on the grid.
+  useEffect(() => {
+    const snap = readSnapshot();
+    const fresh = (p: Phase) => settings[p] * 60_000;
+    /* eslint-disable react-hooks/set-state-in-effect -- restores saved state once after mount */
+    setToday(todayStats());
+    if (!snap) return;
+    const left = snap.running ? snap.endAt - Date.now() : snap.remaining;
+    const meaningful = snap.running || snap.remaining < fresh(snap.phase) - 1000 || snap.done > 0;
+    const urlMood = new URLSearchParams(window.location.search).get("mood");
+    if (urlMood === snap.mood) {
+      setPhase(snap.phase);
+      setDone(snap.done);
+      setTrack(snap.track);
+      if (snap.running && left > 0) {
+        endRef.current = snap.endAt;
+        setRemaining(left);
+        setRunning(true);
+        setNeedsTap(true); // browsers need a tap before music can play again
+      } else setRemaining(Math.max(0, left) || fresh(snap.phase));
+    } else if (!urlMood && meaningful && left > 0) setResumeOffer({ ...snap, left });
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // After a refresh mid-session, the first tap or key brings the music back.
+  useEffect(() => {
+    if (!needsTap) return;
+    const wake = async () => {
+      await ensureAudio();
+      level(phase, running, 3000);
+      spotifyFollow(phase, running);
+      setNeedsTap(false);
+    };
+    window.addEventListener("pointerdown", wake, { once: true });
+    window.addEventListener("keydown", wake, { once: true });
+    return () => { window.removeEventListener("pointerdown", wake); window.removeEventListener("keydown", wake); };
+  }, [needsTap, ensureAudio, level, spotifyFollow, phase, running]);
+
+  const resume = async (snap: Snapshot) => {
+    const i = SCENES.findIndex((sc) => sc.id === snap.mood);
+    if (i < 0) return;
+    window.history.pushState({ mood: snap.mood }, "", `?mood=${snap.mood}`);
+    openMood(i);
+    setTrack(snap.track);
+    setPhase(snap.phase);
+    setDone(snap.done);
+    setResumeOffer(null);
+    const left = snap.running ? snap.endAt - Date.now() : snap.remaining;
+    setRemaining(left);
+    await ensureAudio();
+    audioRef.current?.setTrack(snap.track);
+    if (snap.running) {
+      endRef.current = snap.endAt;
+      setRunning(true);
+      level(snap.phase, true, 3000);
+    }
+  };
+
+  // ------------------------------------------------------------------ distraction-free + screen awake
+
+  // While the timer runs, everything but the clock fades after a few still seconds.
+  useEffect(() => {
+    if (scene === null || !running || panel || help) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- leaving idle mode when its conditions end
+      setIdle(false);
+      return;
+    }
+    let t = setTimeout(() => setIdle(true), 4000);
+    const wake = () => {
+      setIdle(false);
+      clearTimeout(t);
+      t = setTimeout(() => setIdle(true), 4000);
+    };
+    const events = ["pointermove", "pointerdown", "keydown", "touchstart", "wheel"] as const;
+    events.forEach((e) => window.addEventListener(e, wake, { passive: true }));
+    return () => { clearTimeout(t); events.forEach((e) => window.removeEventListener(e, wake)); };
+  }, [scene, running, panel, help]);
+
+  // Keep the screen from sleeping during a session (where the browser allows it).
+  useEffect(() => {
+    if (scene === null || !running || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    const get = () => navigator.wakeLock.request("screen").then((l) => { lock = l; }).catch(() => {});
+    const onVis = () => { if (document.visibilityState === "visible") get(); };
+    get();
+    document.addEventListener("visibilitychange", onVis);
+    return () => { document.removeEventListener("visibilitychange", onVis); lock?.release().catch(() => {}); };
+  }, [scene, running]);
+
 
   useEffect(() => {
     const onFs = () => setFull(!!document.fullscreenElement);
@@ -371,6 +508,68 @@ export function FocusRoom() {
     else document.documentElement.requestFullscreen?.().catch(() => {});
   };
 
+  // ------------------------------------------------------------------ keyboard
+
+  // One listener for the life of the page; useEffectEvent gives it the latest state each time.
+  // (Re-subscribing on every render left gaps while the timer re-rendered 4×/s, so keys could be lost.)
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) {
+        if (e.key === "Escape") el.blur();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (key === "?") { e.preventDefault(); setHelp((h) => !h); return; }
+      if (key === "Escape") {
+        if (document.fullscreenElement) return;
+        if (help) setHelp(false);
+        else if (panel) setPanel(null);
+        else if (new URLSearchParams(window.location.search).get("mood")) leave();
+        return;
+      }
+      if (/^[1-6]$/.test(key)) {
+        const i = Number(key) - 1;
+        if (scene === null) enter(i);
+        else { window.history.replaceState({ mood: SCENES[i].id }, "", `?mood=${SCENES[i].id}`); openMood(i); }
+        return;
+      }
+      if (scene === null) return;
+      const actions: Record<string, () => void> = {
+        " ": () => (running ? pause() : start()),
+        r: () => reset(),
+        f: () => toggleFull(),
+        m: () => toggleMute(),
+        s: () => setPanel((p) => (p === "settings" ? null : "settings")),
+        b: () => setPanel((p) => (p === "background" ? null : "background")),
+      };
+      if (actions[key]) { e.preventDefault(); actions[key](); }
+  });
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => onKey(e);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const helpSheet = help && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setHelp(false)}>
+      <div role="dialog" aria-label="Keyboard shortcuts" className="glass w-full max-w-sm rounded-2xl p-6 text-sm text-white" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <p className="font-display text-lg font-semibold">Keyboard shortcuts</p>
+          <button type="button" onClick={() => setHelp(false)} aria-label="Close" className="rounded-full p-1 text-white/70 hover:bg-white/10 hover:text-white"><X className="size-4" /></button>
+        </div>
+        <dl className="grid gap-2.5">
+          {SHORTCUTS.map(([k, label]) => (
+            <div key={k} className="flex items-center justify-between gap-4">
+              <dt className="text-white/80">{label}</dt>
+              <dd><kbd className="rounded-md border border-white/20 bg-white/10 px-2 py-0.5 font-mono text-xs">{k}</kbd></dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
+  );
+
   // ------------------------------------------------------------------ mood grid
   if (scene === null) {
     return (
@@ -381,6 +580,30 @@ export function FocusRoom() {
           </Link>
           <span className="font-mono text-xs uppercase tracking-[0.25em] text-sea">Focus room</span>
         </header>
+        {(resumeOffer || today.ms > 0) && (
+          <div className="mx-auto mb-4 flex max-w-6xl flex-wrap items-center justify-between gap-3">
+            {resumeOffer ? (
+              <div className="glass flex flex-1 flex-wrap items-center gap-4 rounded-2xl px-5 py-3">
+                <div className="flex-1">
+                  <p className="text-xs uppercase tracking-[0.2em] text-sea">Pick up where you left off</p>
+                  <p className="font-display text-lg font-semibold text-white">
+                    {SCENES.find((sc) => sc.id === resumeOffer.mood)?.name} · {PHASE_LABEL[resumeOffer.phase]} ·{" "}
+                    {fmt(resumeOffer.left ?? resumeOffer.remaining)} left
+                  </p>
+                </div>
+                <button type="button" onClick={() => resume(resumeOffer)} className="flex items-center gap-2 rounded-full bg-white px-5 py-2 font-medium text-ink hover:bg-fog">
+                  <Play className="size-4 fill-current" /> Continue
+                </button>
+                <button type="button" onClick={() => { setResumeOffer(null); try { localStorage.removeItem(SESSION); } catch { /* ignore */ } }} aria-label="Dismiss" className="rounded-full p-2 text-white/60 hover:bg-white/10 hover:text-white">
+                  <X className="size-4" />
+                </button>
+              </div>
+            ) : <span />}
+            {today.ms > 0 && (
+              <p className="text-sm text-mist">Today: <span className="text-fog">{fmtLong(today.ms)}</span> focused · {today.sessions} {today.sessions === 1 ? "session" : "sessions"}</p>
+            )}
+          </div>
+        )}
         <div className="mx-auto grid max-w-6xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {SCENES.map((s, i) => {
             const Icon = ICONS[s.id];
@@ -408,8 +631,10 @@ export function FocusRoom() {
           })}
         </div>
         <p className="mx-auto mt-8 max-w-6xl text-center text-sm text-mist">
-          Pick a mood. Press start. Bring your own Spotify or background inside.
+          Pick a mood. Press start. Bring your own Spotify or background inside.{" "}
+          <button type="button" onClick={() => setHelp(true)} className="underline-offset-4 hover:text-fog hover:underline">Keyboard shortcuts</button>
         </p>
+        {helpSheet}
       </main>
     );
   }
@@ -419,7 +644,7 @@ export function FocusRoom() {
   const progress = 1 - remaining / durationOf(phase);
 
   return (
-    <main className="relative h-dvh overflow-hidden bg-ink text-fog">
+    <main className={cn("relative h-dvh overflow-hidden bg-ink text-fog", idle && "cursor-none")}>
       {bg.kind === "scene" && <SceneCanvas scene={scene} className="absolute inset-0" />}
       {bg.kind === "image" && (
         // eslint-disable-next-line @next/next/no-img-element -- user-supplied file or URL, not in next.config remotePatterns
@@ -430,12 +655,17 @@ export function FocusRoom() {
       )}
       <div className="absolute inset-0 bg-black/25" aria-hidden />
 
-      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 p-4 sm:p-6">
+      <header className={cn("absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 p-4 transition-opacity duration-700 sm:p-6", idle && "pointer-events-none opacity-0")}>
         <button type="button" onClick={leave} className="glass flex items-center gap-2 rounded-full px-4 py-2.5 text-sm text-white hover:bg-white/15">
           <ArrowLeft className="size-4" /> Moods
         </button>
         <p className="hidden font-display text-lg font-semibold text-white/90 sm:block">{bg.kind === "scene" ? s.name : "Your background"}</p>
         <div className="flex gap-2">
+          <Tip label="Keyboard shortcuts (?)">
+            <button type="button" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts" className={iconBtn}>
+              <Keyboard className="size-4" />
+            </button>
+          </Tip>
           <Tip label="Change background">
             <button type="button" onClick={() => setPanel(panel === "background" ? null : "background")} aria-label="Change background" aria-expanded={panel === "background"} className={iconBtn}>
               <ImagePlus className="size-4" />
@@ -450,7 +680,7 @@ export function FocusRoom() {
       </header>
 
       <section className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-4 pb-24 [&>*]:pointer-events-auto">
-        <div className="glass flex rounded-full p-1 text-sm" role="tablist" aria-label="Timer mode">
+        <div className={cn("glass flex rounded-full p-1 text-sm transition-opacity duration-700", idle && "pointer-events-none opacity-0")} role="tablist" aria-label="Timer mode">
           {(["focus", "short", "long"] as Phase[]).map((p) => (
             <button key={p} type="button" role="tab" aria-selected={phase === p} onClick={() => goTo(p, false)}
               className={cn("rounded-full px-4 py-1.5", phase === p ? "bg-white text-ink" : "text-white/80 hover:bg-white/10 hover:text-white")}>
@@ -459,15 +689,15 @@ export function FocusRoom() {
           ))}
         </div>
 
-        <p className="font-display text-[clamp(5rem,18vw,11rem)] font-bold leading-none tracking-tight text-white tabular-nums [text-shadow:0_4px_40px_rgba(0,0,0,0.35)]">
+        <p className={cn("font-display text-[clamp(5rem,18vw,11rem)] font-bold leading-none tracking-tight text-white tabular-nums transition-opacity duration-700 [text-shadow:0_4px_40px_rgba(0,0,0,0.35)]", celebrate && "opacity-0")}>
           {fmt(remaining)}
         </p>
 
-        <div className="h-1 w-56 overflow-hidden rounded-full bg-white/15" aria-hidden>
+        <div className={cn("h-1 w-56 overflow-hidden rounded-full bg-white/15 transition-opacity duration-700", idle && "opacity-30")} aria-hidden>
           <div className="h-full rounded-full bg-warm transition-[width] duration-300" style={{ width: `${Math.min(100, progress * 100)}%` }} />
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className={cn("flex items-center gap-3 transition-opacity duration-700", idle && "pointer-events-none opacity-0")}>
           <button type="button" onClick={running ? pause : start}
             className="flex min-w-36 items-center justify-center gap-2 rounded-full bg-white px-8 py-3 font-medium text-ink shadow-lg shadow-black/30 hover:bg-fog">
             {running ? <Pause className="size-4 fill-current" /> : <Play className="size-4 fill-current" />}
@@ -483,7 +713,7 @@ export function FocusRoom() {
           </Tip>
         </div>
 
-        <div className="flex gap-2" aria-label={`${done % settings.every} of ${settings.every} sessions before a long break`}>
+        <div className={cn("flex gap-2 transition-opacity duration-700", idle && "opacity-0")} aria-label={`${done % settings.every} of ${settings.every} sessions before a long break`}>
           {Array.from({ length: settings.every }, (_, i) => (
             <span key={i} className={cn("size-2 rounded-full", i < done % settings.every ? "bg-warm" : "bg-white/25")} />
           ))}
@@ -538,7 +768,23 @@ export function FocusRoom() {
         )}
       </section>
 
-      <footer className="absolute inset-x-0 bottom-0 z-20 flex flex-col gap-3 p-4 sm:p-6">
+      {needsTap && (
+        <p className="pointer-events-none absolute inset-x-0 top-20 z-20 text-center text-sm text-white/80">Session continued. Tap anywhere to bring the music back.</p>
+      )}
+
+      {celebrate && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center motion-safe:animate-[celebrate_5.2s_ease-in-out_forwards]" aria-live="polite">
+          <div className="absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_50%,rgba(226,180,106,0.35),transparent_70%)]" />
+          <div className="relative text-center">
+            <p className="font-display text-[clamp(2.5rem,7vw,4.5rem)] font-bold tracking-tight text-white [text-shadow:0_4px_30px_rgba(0,0,0,0.4)]">Session complete</p>
+            <p className="mt-3 text-lg text-white/85">{fmtLong(celebrate.ms)} of focus today · {celebrate.sessions} {celebrate.sessions === 1 ? "session" : "sessions"}</p>
+          </div>
+        </div>
+      )}
+
+      {helpSheet}
+
+      <footer className={cn("absolute inset-x-0 bottom-0 z-20 flex flex-col gap-3 p-4 transition-opacity duration-700 sm:p-6", idle && "pointer-events-none opacity-0")}>
         {settings.source === "spotify" && (
           <div className="w-full max-w-sm">
             <div ref={spotifyEl} className="overflow-hidden rounded-xl [&_iframe]:block [&_iframe]:rounded-xl" />
