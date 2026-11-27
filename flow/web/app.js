@@ -73,25 +73,53 @@
 
   const code = $('code');
   const keys = [];
+  const listeners = { key: [], sound: [], state: [] };
+  let soundOn = false;
+  let lastState = model.state;
 
-  async function ensureAudio() {
-    if (!audio.running) await audio.unlock();
+  function volume() {
+    return Number($('volume').value) / 100;
   }
 
-  // Phones only allow audio to start from a tap, so unlock on the tap into the editor too.
-  code.addEventListener('pointerdown', () => { ensureAudio(); });
-  code.addEventListener('keydown', () => { ensureAudio(); });
-  code.addEventListener('input', () => {
-    keys.push(performance.now());
+  /** Turn sound on (must run inside a tap/click/keypress, per browser autoplay rules). */
+  async function soundOnNow() {
+    if (!audio.running) await audio.unlock();
+    soundOn = true;
+    audio.setVolume(volume());
+    listeners.sound.forEach((f) => f(true));
+  }
+
+  function soundOff() {
+    soundOn = false;
+    audio.setVolume(0);
+    listeners.sound.forEach((f) => f(false));
+  }
+
+  const ensureAudio = soundOnNow;
+
+  /** One edit, from you or from the autoplay demo. */
+  function edit() {
+    const now = performance.now();
+    keys.push(now);
     apply(model.edit(Date.now()));
     updateGutter();
-  });
+    listeners.key.forEach((f) => f(now));
+  }
+
+  // Typing in the demo yourself turns sound on. Phones only allow audio from a tap, so the tap counts too.
+  code.addEventListener('pointerdown', () => { ensureAudio(); });
+  code.addEventListener('keydown', (e) => { if (e.isTrusted) ensureAudio(); });
+  code.addEventListener('input', edit);
   for (const ev of ['scroll', 'click', 'select']) code.addEventListener(ev, () => model.presence(Date.now()));
   window.addEventListener('scroll', () => model.presence(Date.now()), { passive: true });
 
   setInterval(() => {
     apply(model.tick(Date.now()));
     render();
+    if (model.state !== lastState) {
+      lastState = model.state;
+      listeners.state.forEach((f) => f(model.state));
+    }
   }, 250);
 
   $('speed').addEventListener('change', (e) => {
@@ -99,11 +127,11 @@
     model.setOptions(scaled(speed));
     render();
   });
-  $('volume').addEventListener('input', (e) => audio.setVolume(Number(e.target.value) / 100));
+  $('volume').addEventListener('input', () => { if (soundOn) audio.setVolume(volume()); });
 
   function updateGutter() {
     const lines = code.value.split('\n').length;
-    $('gutter').textContent = Array.from({ length: Math.max(lines, 9) }, (_, i) => i + 1).join('\n');
+    $('gutter').textContent = Array.from({ length: Math.max(lines + 4, 9) }, (_, i) => (i < lines ? i + 1 : '')).join('\n');
   }
   code.addEventListener('scroll', () => { $('gutter').scrollTop = code.scrollTop; });
   $('gutter').style.overflow = 'hidden';
@@ -129,6 +157,7 @@
     b.querySelector('b').textContent = t.name;
     b.querySelector('.blurb').textContent = t.blurb;
     b.querySelector('small').textContent = t.credit;
+    b.innerHTML += '<span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>';
     b.addEventListener('click', async () => {
       chooseTrack(t.id);
       await ensureAudio();
@@ -287,8 +316,9 @@
       [1.6, 'in flow'], [4.1, 'thinking'], [5.8, 'back'], [10.5, 'reading, then thinking'], [14.4, 'away'], [17.2, 'back'],
     ];
     for (const [min, label] of notes) el('text', { x: x(min * 60000), y: T - 14, 'text-anchor': 'middle', class: 'tl-note' }, label);
+    return { svg, pts, x, y, end, H, B, T, el };
   }
-  drawTimeline();
+  const timeline = drawTimeline();
 
   const style = document.createElement('style');
   style.textContent = `
@@ -302,4 +332,13 @@
   document.head.appendChild(style);
 
   render();
+
+  // Shared with web/alive.js (motion, sound cues, autoplay demo).
+  window.UC = {
+    model, audio, code, keys, timeline,
+    edit, levelAt, ensureAudio,
+    soundOn: soundOnNow, soundOff,
+    isSoundOn: () => soundOn,
+    on: (event, f) => listeners[event].push(f),
+  };
 })();
